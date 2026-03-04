@@ -26,5 +26,16 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+brews:
+  - repository:
+      owner: Mscotello
+      name: homebrew-docker-agent-tail
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://docker-agent-tail.michaelscotello.com"
+    description: "Auto-discover Docker containers, tail their logs, and write structured files for AI agents"
+    license: "MIT"
+    test: |
+      system "#{bin}/docker-agent-tail", "--help"
+
 changelog:
   use: github
