@@ -19,6 +19,12 @@ const lnavFormatJSON = `{
     "timestamp-field": "ts",
     "level-field": "level",
     "body-field": "message",
+    "value": {
+      "container": { "kind": "string", "identifier": true },
+      "stream": { "kind": "string" },
+      "trace_id": { "kind": "string", "identifier": true },
+      "span_id": { "kind": "string" }
+    },
     "line-format": [
       { "field": "__timestamp__", "timestamp-format": "%Y-%m-%dT%H:%M:%S%z" },
       " ",
