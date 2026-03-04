@@ -2,8 +2,8 @@
 
 CLI tool that auto-discovers Docker containers, tails their logs, and writes structured files optimized for AI coding agents.
 
-[![Build](https://github.com/scotello/docker-agent-tail/actions/workflows/build.yml/badge.svg)](https://github.com/scotello/docker-agent-tail/actions/workflows/build.yml)
-[![Release](https://github.com/scotello/docker-agent-tail/actions/workflows/release.yml/badge.svg)](https://github.com/scotello/docker-agent-tail/releases)
+[![Build](https://github.com/Mscotello/docker-agent-tail/actions/workflows/build.yml/badge.svg)](https://github.com/Mscotello/docker-agent-tail/actions/workflows/build.yml)
+[![Release](https://github.com/Mscotello/docker-agent-tail/actions/workflows/release.yml/badge.svg)](https://github.com/Mscotello/docker-agent-tail/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 ## Features
