@@ -18,6 +18,8 @@ import (
 
 	"github.com/Mscotello/docker-agent-tail/internal/cli"
 	"github.com/Mscotello/docker-agent-tail/internal/docker"
+	"github.com/Mscotello/docker-agent-tail/internal/filter"
+	outpkg "github.com/Mscotello/docker-agent-tail/internal/output"
 	"github.com/Mscotello/docker-agent-tail/internal/session"
 )
 
@@ -32,14 +34,11 @@ func main() {
 		output  = pflag.StringP("output", "o", "./logs", "output directory")
 		since   = pflag.StringP("since", "s", "", "start from N ago (e.g. \"5m\")")
 		version = pflag.BoolP("version", "v", false, "show version and exit")
+		all     = pflag.BoolP("all", "a", false, "tail all running containers")
+		exclude = pflag.StringSliceP("exclude", "e", nil, "regex patterns to exclude")
+		mute    = pflag.StringSliceP("mute", "m", nil, "hide from terminal, still write to file")
+		noColor = pflag.Bool("no-color", false, "disable terminal colors")
 	)
-
-	// Unused flags reserved for Phase 4
-	_ = pflag.BoolP("all", "a", false, "tail all running containers")
-	_ = pflag.StringSliceP("exclude", "e", nil, "regex patterns to exclude")
-	_ = pflag.StringSliceP("mute", "m", nil, "hide from terminal, still write to file")
-	_ = pflag.BoolP("json", "j", false, "JSON lines output")
-	_ = pflag.Bool("no-color", false, "disable terminal colors")
 
 	// Add help flag
 	pflag.BoolP("help", "h", false, "show help message")
@@ -64,8 +63,7 @@ func main() {
 	args := pflag.Args()
 
 	// If no flags or args provided, show usage
-	all, _ := pflag.CommandLine.GetBool("all")
-	if !all && len(*names) == 0 && !*compose && len(args) == 0 {
+	if !*all && len(*names) == 0 && !*compose && len(args) == 0 {
 		printUsage()
 		os.Exit(0)
 	}
@@ -172,6 +170,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create exclude filter
+	excludeFilter, err := filter.NewFilter(*exclude)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid exclude pattern: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Create terminal output writer
+	outputWriter := outpkg.NewOutputWriter(os.Stdout, *noColor, *mute)
+
 	// Create log writer
 	writer, err := session.NewLogWriter(sess.Dir)
 	if err != nil {
@@ -200,7 +208,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			streamContainerLogs(ctx, dc, containerID, containerName, sinceTime, *follow, writer, &streamMap, &streamMu)
+			streamContainerLogs(ctx, dc, containerID, containerName, sinceTime, *follow, writer, outputWriter, excludeFilter, &streamMap, &streamMu)
 		}()
 	}
 
@@ -216,7 +224,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		processEvents(ctx, dc, eventCh, errCh, writer, *follow, &streamMap, &streamMu, &wg, sess)
+		processEvents(ctx, dc, eventCh, errCh, writer, outputWriter, excludeFilter, *follow, &streamMap, &streamMu, &wg, sess)
 	}()
 
 	// Wait for context to be done
@@ -325,7 +333,7 @@ func discoverInitialContainers(ctx context.Context, c docker.DockerClient, patte
 }
 
 // streamContainerLogs streams logs from a single container
-func streamContainerLogs(ctx context.Context, c docker.DockerClient, containerID, containerName string, sinceTime time.Time, follow bool, w *session.LogWriter, streamMap *map[string]context.CancelFunc, mu *sync.Mutex) {
+func streamContainerLogs(ctx context.Context, c docker.DockerClient, containerID, containerName string, sinceTime time.Time, follow bool, w *session.LogWriter, ow *outpkg.OutputWriter, ef *filter.Filter, streamMap *map[string]context.CancelFunc, mu *sync.Mutex) {
 	logCtx, logCancel := context.WithCancel(ctx)
 	mu.Lock()
 	(*streamMap)[containerID] = logCancel
@@ -353,7 +361,11 @@ func streamContainerLogs(ctx context.Context, c docker.DockerClient, containerID
 			if line.Content == "" && line.ContainerName == "" {
 				return
 			}
+			if ef != nil && ef.Match(line.Content) {
+				continue
+			}
 			w.Write(line)
+			ow.WriteLogLine(line)
 		case err := <-errCh:
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error reading logs from %s: %v\n", containerName, err)
@@ -364,7 +376,7 @@ func streamContainerLogs(ctx context.Context, c docker.DockerClient, containerID
 }
 
 // processEvents handles Docker container lifecycle events
-func processEvents(ctx context.Context, c docker.DockerClient, eventCh <-chan docker.ContainerEvent, errCh <-chan error, w *session.LogWriter, follow bool, streamMap *map[string]context.CancelFunc, mu *sync.Mutex, wg *sync.WaitGroup, sess *session.Session) {
+func processEvents(ctx context.Context, c docker.DockerClient, eventCh <-chan docker.ContainerEvent, errCh <-chan error, w *session.LogWriter, ow *outpkg.OutputWriter, ef *filter.Filter, follow bool, streamMap *map[string]context.CancelFunc, mu *sync.Mutex, wg *sync.WaitGroup, sess *session.Session) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -381,7 +393,7 @@ func processEvents(ctx context.Context, c docker.DockerClient, eventCh <-chan do
 				wg.Add(1)
 				go func(e docker.ContainerEvent) {
 					defer wg.Done()
-					streamContainerLogs(ctx, c, e.ContainerID, e.ContainerName, time.Now(), follow, w, streamMap, mu)
+					streamContainerLogs(ctx, c, e.ContainerID, e.ContainerName, time.Now(), follow, w, ow, ef, streamMap, mu)
 				}(event)
 
 				// Update session metadata
@@ -417,7 +429,7 @@ func processEvents(ctx context.Context, c docker.DockerClient, eventCh <-chan do
 					go func(e docker.ContainerEvent) {
 						defer wg.Done()
 						time.Sleep(100 * time.Millisecond) // Wait for container to fully start
-						streamContainerLogs(ctx, c, e.ContainerID, e.ContainerName, time.Now(), follow, w, streamMap, mu)
+						streamContainerLogs(ctx, c, e.ContainerID, e.ContainerName, time.Now(), follow, w, ow, ef, streamMap, mu)
 					}(event)
 				}
 			}
