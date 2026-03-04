@@ -62,6 +62,13 @@ func main() {
 	// Get positional arguments (glob patterns)
 	args := pflag.Args()
 
+	// If no flags or args provided, show usage
+	all, _ := pflag.CommandLine.GetBool("all")
+	if !all && len(*names) == 0 && !*compose && len(args) == 0 {
+		printUsage()
+		os.Exit(0)
+	}
+
 	// Handle init subcommand
 	if len(args) > 0 && args[0] == "init" {
 		if err := cli.RunInit(*output); err != nil {
