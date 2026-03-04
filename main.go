@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -23,6 +22,15 @@ import (
 	"github.com/Mscotello/docker-agent-tail/internal/session"
 )
 
+// Exit codes
+const (
+	exitSuccess      = 0
+	exitGeneral      = 1
+	exitNoContainers = 2
+	exitDockerError  = 3
+	exitUsageError   = 64
+)
+
 var Version = "dev"
 
 func main() {
@@ -30,14 +38,15 @@ func main() {
 	var (
 		names   = pflag.StringSliceP("names", "n", nil, "explicit container names")
 		compose = pflag.BoolP("compose", "c", false, "auto-discover from compose project")
-		follow  = pflag.BoolP("follow", "f", true, "reattach on restart")
+		follow  = pflag.BoolP("follow", "f", false, "reattach on container restart")
 		output  = pflag.StringP("output", "o", "./logs", "output directory")
 		since   = pflag.StringP("since", "s", "", "start from N ago (e.g. \"5m\")")
 		version = pflag.BoolP("version", "v", false, "show version and exit")
 		all     = pflag.BoolP("all", "a", false, "tail all running containers")
 		exclude = pflag.StringSliceP("exclude", "e", nil, "regex patterns to exclude")
 		mute    = pflag.StringSliceP("mute", "m", nil, "hide from terminal, still write to file")
-		noColor = pflag.Bool("no-color", false, "disable terminal colors")
+		noColor    = pflag.Bool("no-color", false, "disable terminal colors")
+		jsonOutput = pflag.Bool("json", false, "output logs as JSON Lines to stdout")
 	)
 
 	// Add help flag
@@ -72,6 +81,19 @@ func main() {
 	if len(args) > 0 {
 		switch args[0] {
 		case "init":
+			if hasHelpFlag(args[1:]) {
+				fmt.Fprintf(os.Stderr, `Usage: docker-agent-tail init
+
+Set up AI agent config files in the current project.
+
+Creates:
+  .claude/skills/docker-logs.md    Claude Code skill file
+  CLAUDE.md                        Claude Code instructions (appends if exists)
+  .cursor/rules/ (if .cursor/ exists)
+  .windsurf/rules/ (if .windsurf/ exists)
+`)
+				os.Exit(0)
+			}
 			if err := cli.RunInit(*output); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
@@ -81,51 +103,102 @@ func main() {
 			fmt.Print(cli.AgentHelp())
 			os.Exit(0)
 		case "lnav":
-			var lnavSession string
-			for i := 1; i < len(args); i++ {
-				if args[i] == "--session" && i+1 < len(args) {
-					lnavSession = args[i+1]
-					i++
-				}
+			lnavFlags := pflag.NewFlagSet("lnav", pflag.ContinueOnError)
+			lnavSession := lnavFlags.String("session", "", "specific session name to open")
+			lnavHelp := lnavFlags.BoolP("help", "h", false, "show help for lnav command")
+			if err := lnavFlags.Parse(args[1:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(exitUsageError)
 			}
-			if err := cli.RunLnav(*output, lnavSession); err != nil {
+			if *lnavHelp {
+				fmt.Fprintf(os.Stderr, `Usage: docker-agent-tail lnav [--session NAME]
+
+Open the latest log session in lnav.
+
+Flags:
+  --session string   Open a specific session by name (e.g., 2026-03-04-143700)
+
+Examples:
+  docker-agent-tail lnav
+  docker-agent-tail lnav --session 2026-03-04-143700
+`)
+				os.Exit(0)
+			}
+			if err := cli.RunLnav(*output, *lnavSession); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
 			os.Exit(0)
 		case "lnav-install":
+			if hasHelpFlag(args[1:]) {
+				fmt.Fprintf(os.Stderr, `Usage: docker-agent-tail lnav-install
+
+Install the lnav format definition for docker-agent-tail JSONL logs.
+
+The format is installed to ~/.lnav/formats/installed/ and enables
+lnav to parse container, stream, level, and timestamp fields.
+`)
+				os.Exit(0)
+			}
 			if err := cli.RunLnavInstall(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
 			os.Exit(0)
 		case "clean":
-			retain := 5
-			if len(args) > 1 {
-				for i := 1; i < len(args); i++ {
-					if args[i] == "--retain" && i+1 < len(args) {
-						n, err := strconv.Atoi(args[i+1])
-						if err != nil || n < 0 {
-							fmt.Fprintf(os.Stderr, "Error: --retain must be a non-negative integer\n")
-							os.Exit(1)
-						}
-						retain = n
-					}
-				}
+			cleanFlags := pflag.NewFlagSet("clean", pflag.ContinueOnError)
+			retain := cleanFlags.Int("retain", 5, "number of sessions to keep")
+			dryRun := cleanFlags.Bool("dry-run", false, "list sessions that would be deleted without deleting")
+			cleanHelp := cleanFlags.BoolP("help", "h", false, "show help for clean command")
+			if err := cleanFlags.Parse(args[1:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(exitUsageError)
 			}
-			deleted, err := session.CleanSessions(*output, retain)
+			if *cleanHelp {
+				fmt.Fprintf(os.Stderr, `Usage: docker-agent-tail clean [--retain N] [--dry-run]
+
+Remove old log sessions, keeping the most recent N.
+
+Flags:
+  --retain int   Number of sessions to keep (default 5)
+  --dry-run      List sessions that would be deleted without deleting
+
+Examples:
+  docker-agent-tail clean
+  docker-agent-tail clean --retain 3
+  docker-agent-tail clean --retain 0
+  docker-agent-tail clean --dry-run
+`)
+				os.Exit(0)
+			}
+			if *retain < 0 {
+				fmt.Fprintf(os.Stderr, "Error: --retain must be a non-negative integer\n")
+				os.Exit(exitUsageError)
+			}
+			deleted, err := session.CleanSessions(*output, *retain, *dryRun)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
-			remaining := 0
-			entries, _ := os.ReadDir(*output)
-			for _, e := range entries {
-				if e.IsDir() && e.Name() != "latest" {
-					remaining++
+			if *dryRun {
+				if len(deleted) == 0 {
+					fmt.Printf("No sessions to remove (keeping %d)\n", *retain)
+				} else {
+					fmt.Printf("Would remove %d sessions:\n", len(deleted))
+					for _, name := range deleted {
+						fmt.Printf("  %s\n", name)
+					}
 				}
+			} else {
+				remaining := 0
+				entries, _ := os.ReadDir(*output)
+				for _, e := range entries {
+					if e.IsDir() && e.Name() != "latest" {
+						remaining++
+					}
+				}
+				fmt.Printf("Removed %d sessions, kept %d\n", len(deleted), remaining)
 			}
-			fmt.Printf("Removed %d sessions, kept %d\n", len(deleted), remaining)
 			os.Exit(0)
 		}
 	}
@@ -145,33 +218,46 @@ func main() {
 		cancel()
 	}()
 
+	// Create a discovery context with 30s timeout for Docker API calls
+	discoverCtx, discoverCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer discoverCancel()
+
 	// Create Docker client
-	dc, err := docker.NewClient(ctx)
+	dc, err := docker.NewClient(discoverCtx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: creating Docker client: %v\n", err)
-		os.Exit(1)
+		if discoverCtx.Err() == context.DeadlineExceeded {
+			fmt.Fprintf(os.Stderr, "Error: Docker API timed out after 30s — is the daemon running?\n")
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: creating Docker client: %v\n", err)
+		}
+		os.Exit(exitDockerError)
 	}
 	defer dc.Close()
 
 	// Determine compose project
 	var composeProject string
 	if *compose {
-		composeProject, err = detectComposeProject(ctx, dc)
+		composeProject, err = detectComposeProject(discoverCtx, dc)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: detecting compose project: %v\n", err)
 		}
 	}
 
 	// Discover initial containers
-	containers, err := discoverInitialContainers(ctx, dc, args, *names, composeProject)
+	containers, err := discoverInitialContainers(discoverCtx, dc, args, *names, composeProject)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: discovering containers: %v\n", err)
-		os.Exit(1)
+		if discoverCtx.Err() == context.DeadlineExceeded {
+			fmt.Fprintf(os.Stderr, "Error: Docker API timed out after 30s — is the daemon running?\n")
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: discovering containers: %v\n", err)
+		}
+		os.Exit(exitDockerError)
 	}
+	discoverCancel() // discovery done, release timeout
 
 	if len(containers) == 0 {
 		fmt.Fprintf(os.Stderr, "No containers found matching the criteria\n")
-		os.Exit(1)
+		os.Exit(exitNoContainers)
 	}
 
 	// Create session
@@ -196,11 +282,11 @@ func main() {
 	excludeFilter, err := filter.NewFilter(*exclude)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: invalid exclude pattern: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitUsageError)
 	}
 
 	// Create terminal output writer
-	outputWriter := outpkg.NewOutputWriter(os.Stdout, *noColor, *mute)
+	outputWriter := outpkg.NewOutputWriter(os.Stdout, *noColor, *mute, *jsonOutput)
 
 	// Create log writer
 	writer, err := session.NewLogWriter(sess.Dir)
@@ -216,7 +302,11 @@ func main() {
 		d, err := time.ParseDuration(*since)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: invalid --since duration %q: %v\n", *since, err)
-			os.Exit(1)
+			os.Exit(exitUsageError)
+		}
+		if d < 0 {
+			fmt.Fprintf(os.Stderr, "Error: --since duration must be positive (got %q)\n", *since)
+			os.Exit(exitUsageError)
 		}
 		sinceTime = time.Now().Add(-d)
 	}
@@ -259,13 +349,25 @@ func main() {
 	fmt.Printf("\nSession closed: %s\n", sess.Dir)
 }
 
+// hasHelpFlag checks if --help or -h appears in args.
+func hasHelpFlag(args []string) bool {
+	for _, a := range args {
+		if a == "--help" || a == "-h" {
+			return true
+		}
+	}
+	return false
+}
+
 func printUsage() {
 	fmt.Fprintf(os.Stderr, `Usage: docker-agent-tail [FLAGS] [PATTERN...]
 
 Auto-discover Docker containers and tail their logs.
 
+PATTERN  glob pattern to match container names (supports *, ?, [abc])
+
 Commands:
-  init          Set up AI agent config files (CLAUDE.md, .mcp.json, skills)
+  init          Set up AI agent config files (skills, CLAUDE.md)
   agent-help    Print usage guide for AI coding agents
   clean         Remove old log sessions (--retain N, default 5)
   lnav-install  Install lnav format for viewing logs with lnav
@@ -279,6 +381,8 @@ Examples:
   docker-agent-tail --compose                      # auto-discover from compose project
   docker-agent-tail --all --exclude 'health'       # filter health checks
   docker-agent-tail --all --since 5m               # last 5 minutes
+  docker-agent-tail 'api-*'                        # glob pattern match
+  docker-agent-tail agent-help                     # detailed guide for AI agents
   docker-agent-tail lnav                           # view latest session in lnav
 `)
 }
@@ -429,7 +533,9 @@ func processEvents(ctx context.Context, c docker.DockerClient, eventCh <-chan do
 				}(event)
 
 				// Update session metadata
+				sess.ContainersMu.Lock()
 				sess.Containers = append(sess.Containers, event.ContainerName)
+				sess.ContainersMu.Unlock()
 				updateSessionMetadata(sess)
 
 			case docker.EventStop, docker.EventDie:
@@ -471,10 +577,15 @@ func processEvents(ctx context.Context, c docker.DockerClient, eventCh <-chan do
 
 // updateSessionMetadata updates the session metadata.json file
 func updateSessionMetadata(sess *session.Session) {
+	sess.ContainersMu.Lock()
+	containers := make([]string, len(sess.Containers))
+	copy(containers, sess.Containers)
+	sess.ContainersMu.Unlock()
+
 	meta := session.Metadata{
 		StartTime:  sess.StartTime,
 		Command:    sess.Command,
-		Containers: sess.Containers,
+		Containers: containers,
 	}
 	metadataPath := filepath.Join(sess.Dir, "metadata.json")
 	data, err := json.MarshalIndent(meta, "", "  ")

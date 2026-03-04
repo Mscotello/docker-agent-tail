@@ -12,10 +12,12 @@ import (
 var sessionDirPattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-\d{6}$`)
 
 // CleanSessions removes old session directories from outputDir, keeping the
-// newest retain count. Returns the list of deleted directory names.
+// newest retain count. Returns the list of deleted (or would-be-deleted) directory names.
 // Only directories matching the timestamp pattern are considered sessions.
 // The "latest" symlink is updated if it pointed to a deleted session.
-func CleanSessions(outputDir string, retain int) ([]string, error) {
+// If dryRun is true, returns sessions that would be deleted without deleting them.
+func CleanSessions(outputDir string, retain int, dryRun ...bool) ([]string, error) {
+	isDryRun := len(dryRun) > 0 && dryRun[0]
 	entries, err := os.ReadDir(outputDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -42,6 +44,11 @@ func CleanSessions(outputDir string, retain int) ([]string, error) {
 
 	// Sessions to delete are everything after the first `retain` entries
 	toDelete := sessions[retain:]
+
+	// Dry-run: return what would be deleted without doing it
+	if isDryRun {
+		return toDelete, nil
+	}
 
 	// Read current latest symlink target
 	latestLink := filepath.Join(outputDir, "latest")

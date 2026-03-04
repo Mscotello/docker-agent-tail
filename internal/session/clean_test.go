@@ -193,6 +193,41 @@ func TestCleanSessions(t *testing.T) {
 	}
 }
 
+func TestCleanSessions_dryRun(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	sessions := []string{
+		"2026-03-01-100000",
+		"2026-03-02-100000",
+		"2026-03-03-100000",
+		"2026-03-04-100000",
+		"2026-03-05-100000",
+	}
+	for _, s := range sessions {
+		if err := os.MkdirAll(filepath.Join(tmpDir, s), 0755); err != nil {
+			t.Fatalf("creating session dir: %v", err)
+		}
+	}
+
+	// Dry-run should return sessions to delete but not actually delete them
+	deleted, err := CleanSessions(tmpDir, 2, true)
+	if err != nil {
+		t.Fatalf("CleanSessions(dry-run) error: %v", err)
+	}
+
+	if len(deleted) != 3 {
+		t.Errorf("dry-run reported %d deletions, want 3", len(deleted))
+	}
+
+	// Verify all sessions still exist
+	for _, s := range sessions {
+		if _, err := os.Stat(filepath.Join(tmpDir, s)); os.IsNotExist(err) {
+			t.Errorf("session %s was deleted during dry-run", s)
+		}
+	}
+}
+
 func TestCleanSessions_nonexistent_directory(t *testing.T) {
 	t.Parallel()
 

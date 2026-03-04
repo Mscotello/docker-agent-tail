@@ -16,6 +16,7 @@ import (
 type OutputWriter struct {
 	w               io.Writer
 	noColor         bool
+	jsonMode        bool
 	muteContainers  map[string]bool
 	containerColors map[string]func(string, ...interface{}) string
 	mu              sync.Mutex
@@ -23,7 +24,7 @@ type OutputWriter struct {
 
 // NewOutputWriter creates a new output writer.
 // noColor disables colors. noColorEnv respects NO_COLOR environment variable per https://no-color.org
-func NewOutputWriter(w io.Writer, noColor bool, muteContainers []string) *OutputWriter {
+func NewOutputWriter(w io.Writer, noColor bool, muteContainers []string, jsonMode ...bool) *OutputWriter {
 	// Check NO_COLOR env var
 	if os.Getenv("NO_COLOR") != "" {
 		noColor = true
@@ -34,9 +35,12 @@ func NewOutputWriter(w io.Writer, noColor bool, muteContainers []string) *Output
 		muteMap[c] = true
 	}
 
+	isJSON := len(jsonMode) > 0 && jsonMode[0]
+
 	return &OutputWriter{
 		w:               w,
 		noColor:         noColor,
+		jsonMode:        isJSON,
 		muteContainers:  muteMap,
 		containerColors: make(map[string]func(string, ...interface{}) string),
 	}
@@ -67,9 +71,15 @@ func (ow *OutputWriter) getContainerColor(containerName string) func(string, ...
 }
 
 // WriteLogLine writes a formatted log line to terminal.
+// In JSON mode, outputs structured JSONL. Otherwise, human-readable with colors.
 // Respects --mute for containers that shouldn't be displayed.
 func (ow *OutputWriter) WriteLogLine(line docker.LogLine) {
 	if ow.muteContainers[line.ContainerName] {
+		return
+	}
+
+	if ow.jsonMode {
+		ow.WriteJSON(line)
 		return
 	}
 

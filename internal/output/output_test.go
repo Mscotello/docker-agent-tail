@@ -188,6 +188,35 @@ func TestWriteJSON(t *testing.T) {
 	}
 }
 
+func TestWriteLogLine_JSONMode(t *testing.T) {
+	t.Parallel()
+	buf := &bytes.Buffer{}
+	ow := NewOutputWriter(buf, false, nil, true)
+
+	line := docker.LogLine{
+		Timestamp:     time.Date(2026, 3, 4, 10, 30, 1, 0, time.UTC),
+		Stream:        "stdout",
+		Content:       "test message",
+		ContainerName: "api",
+	}
+	ow.WriteLogLine(line)
+
+	output := buf.String()
+	if !strings.Contains(output, `"container":"api"`) {
+		t.Errorf("JSON output missing container field: %s", output)
+	}
+	if !strings.Contains(output, `"stream":"stdout"`) {
+		t.Errorf("JSON output missing stream field: %s", output)
+	}
+	if !strings.Contains(output, `"message"`) {
+		t.Errorf("JSON output missing message field: %s", output)
+	}
+	// Should NOT contain color-formatted output
+	if strings.Contains(output, "[") && strings.Contains(output, "]") && !strings.Contains(output, `"`) {
+		t.Errorf("JSON mode should not produce human-readable format")
+	}
+}
+
 func TestNoColorEnv(t *testing.T) {
 	// Test NO_COLOR environment variable
 	old := os.Getenv("NO_COLOR")
