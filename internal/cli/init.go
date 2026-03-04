@@ -52,6 +52,66 @@ Skill for working with Docker container logs tailed by docker-agent-tail.
 `
 )
 
+// AgentHelp returns a structured guide for AI coding agents
+func AgentHelp() string {
+	return `# docker-agent-tail — AI Agent Guide
+
+## Quick start
+
+Start tailing logs in the background:
+
+  docker-agent-tail --all --output logs/ &
+
+Logs are now being written to disk. Read them anytime:
+
+  logs/latest/combined.log      — all containers, interleaved
+  logs/latest/<name>.log        — per-container logs
+  logs/latest/metadata.json     — session info (containers, start time)
+
+## Log format
+
+  [2026-03-04T10:30:01.789Z] [api    ] [stdout] GET /api/users 200 12ms
+  [2026-03-04T10:30:01.800Z] [api    ] [stderr] WARN: connection pool exhausted
+  [2026-03-04T10:30:02.100Z] [worker ] [stdout] Job completed: send-email-123
+
+Fields: ISO 8601 timestamp, container name (fixed-width), stream type, message.
+
+## Useful commands
+
+  docker-agent-tail --all                    # tail all containers
+  docker-agent-tail --names api,web          # tail specific containers
+  docker-agent-tail --all --exclude 'health' # filter out noise
+  docker-agent-tail --all --json             # JSON lines output
+  docker-agent-tail --all --since 5m         # last 5 minutes only
+
+## Background usage
+
+  # Start in background
+  docker-agent-tail --all --output logs/ &
+
+  # Check if running
+  pgrep -f docker-agent-tail
+
+  # Stop it
+  pkill -f docker-agent-tail
+
+## Debugging workflow
+
+  1. Read logs/latest/combined.log for an overview
+  2. Grep for [stderr] to find errors
+  3. Check per-container logs for detailed context
+  4. Review logs/latest/metadata.json for container info
+
+## Setup for your project
+
+  docker-agent-tail init    # creates agent config files for Claude/Cursor/Windsurf
+
+## Documentation
+
+  https://docker-agent-tail.michaelscotello.com
+`
+}
+
 // RunInit initializes docker-agent-tail config for AI agents
 func RunInit(outputDir string) error {
 	// Get current working directory - use provided directory or get cwd

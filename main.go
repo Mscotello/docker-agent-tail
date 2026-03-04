@@ -69,13 +69,19 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Handle init subcommand
-	if len(args) > 0 && args[0] == "init" {
-		if err := cli.RunInit(*output); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+	// Handle subcommands
+	if len(args) > 0 {
+		switch args[0] {
+		case "init":
+			if err := cli.RunInit(*output); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			os.Exit(0)
+		case "agent-help":
+			fmt.Print(cli.AgentHelp())
+			os.Exit(0)
 		}
-		os.Exit(0)
 	}
 
 	// Setup context for graceful shutdown
@@ -197,6 +203,10 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, `Usage: docker-agent-tail [FLAGS] [PATTERN...]
 
 Auto-discover Docker containers and tail their logs.
+
+Commands:
+  init          Set up AI agent config files (.claude, .cursor, .windsurf)
+  agent-help    Print usage guide for AI coding agents
 
 Flags:
 `)
