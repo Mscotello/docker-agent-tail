@@ -6,15 +6,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
 // Session represents a logging session with metadata and output directory.
 type Session struct {
-	Dir        string    // Full path to session directory (e.g., logs/2026-03-04-103001/)
-	StartTime  time.Time // Session start time
-	Command    string    // Original command line
-	Containers []string  // Container names being logged
+	Dir          string    // Full path to session directory (e.g., logs/2026-03-04-103001/)
+	StartTime    time.Time // Session start time
+	Command      string    // Original command line
+	Containers   []string  // Container names being logged
+	ContainersMu sync.Mutex // Guards Containers slice for concurrent access
 }
 
 // Metadata is written to metadata.json in the session directory.

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -111,5 +112,113 @@ func TestLogWriter(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestLogWriter_WriteAfterClose(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	writer, err := NewLogWriter(tmpDir)
+	if err != nil {
+		t.Fatalf("NewLogWriter() error = %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	// Write after close should not panic
+	writer.Write(docker.LogLine{
+		Timestamp:     time.Now(),
+		Stream:        "stdout",
+		Content:       "should be dropped",
+		ContainerName: "app",
+	})
+}
+
+func TestLogWriter_WriteErrorLogging(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	writer, err := NewLogWriter(tmpDir)
+	if err != nil {
+		t.Fatalf("NewLogWriter() error = %v", err)
+	}
+
+	// Close the combined file to force write errors
+	writer.combinedFile.Close()
+
+	var mu sync.Mutex
+	errors := make(map[string]int)
+	writer.onWriteError = func(containerName string, err error) {
+		mu.Lock()
+		errors[containerName]++
+		mu.Unlock()
+	}
+
+	// Write multiple lines — should only report error once per target
+	for i := 0; i < 5; i++ {
+		writer.Write(docker.LogLine{
+			Timestamp:     time.Now(),
+			Stream:        "stdout",
+			Content:       "test",
+			ContainerName: "app",
+		})
+	}
+
+	// Wait for flusher to process
+	writer.flushTicker.Stop()
+	close(writer.done)
+	writer.flusherWg.Wait()
+
+	mu.Lock()
+	combinedCount := errors["combined"]
+	mu.Unlock()
+
+	if combinedCount != 1 {
+		t.Errorf("expected 1 error report for combined, got %d", combinedCount)
+	}
+}
+
+func TestLogWriter_FlusherDrainsQueue(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	writer, err := NewLogWriter(tmpDir)
+	if err != nil {
+		t.Fatalf("NewLogWriter() error = %v", err)
+	}
+
+	// Write many lines concurrently
+	const count = 100
+	var wg sync.WaitGroup
+	wg.Add(count)
+	for i := 0; i < count; i++ {
+		go func() {
+			defer wg.Done()
+			writer.Write(docker.LogLine{
+				Timestamp:     time.Now(),
+				Stream:        "stdout",
+				Content:       "test line",
+				ContainerName: "app",
+			})
+		}()
+	}
+	wg.Wait()
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	// All lines should be in combined.jsonl
+	data, err := os.ReadFile(filepath.Join(tmpDir, "combined.jsonl"))
+	if err != nil {
+		t.Fatalf("reading combined.jsonl: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != count {
+		t.Errorf("combined.jsonl has %d lines, want %d", len(lines), count)
 	}
 }

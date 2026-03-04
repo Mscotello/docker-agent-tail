@@ -2,8 +2,10 @@ package session
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -76,6 +78,39 @@ func TestNewSession(t *testing.T) {
 				t.Errorf("latest symlink = %q, want %q", target, wantTarget)
 			}
 		})
+	}
+}
+
+func TestSession_ConcurrentContainerAppend(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	sess, err := NewSession(tmpDir, "cmd", []string{"initial"})
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+
+	const goroutines = 50
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		go func(n int) {
+			defer wg.Done()
+			sess.ContainersMu.Lock()
+			sess.Containers = append(sess.Containers, fmt.Sprintf("container-%d", n))
+			sess.ContainersMu.Unlock()
+		}(i)
+	}
+	wg.Wait()
+
+	sess.ContainersMu.Lock()
+	got := len(sess.Containers)
+	sess.ContainersMu.Unlock()
+
+	want := 1 + goroutines // "initial" + goroutines
+	if got != want {
+		t.Errorf("Containers length = %d, want %d", got, want)
 	}
 }
 

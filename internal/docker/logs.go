@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -38,11 +39,20 @@ func StreamLogs(ctx context.Context, c DockerClient, containerID string, opts St
 	go func() {
 		defer close(logCh)
 
-		// Get container inspect info to check for TTY
+		// Get container inspect info to check for TTY and log driver
 		resp, err := c.ContainerInspect(ctx, containerID)
 		if err != nil {
 			errCh <- fmt.Errorf("inspecting container: %w", err)
 			return
+		}
+
+		// Check for unsupported log driver
+		if resp.HostConfig != nil {
+			driver := resp.HostConfig.LogConfig.Type
+			if driver != "" && driver != "json-file" && driver != "journald" {
+				fmt.Fprintf(os.Stderr, "Warning: container %s uses log driver %q (unsupported); logs may be empty\n",
+					opts.ContainerName, driver)
+			}
 		}
 
 		logOpts := container.LogsOptions{
@@ -98,6 +108,7 @@ func StreamLogs(ctx context.Context, c DockerClient, containerID string, opts St
 // readStream scans lines from a reader and sends parsed LogLines to logCh.
 func readStream(ctx context.Context, reader io.Reader, logCh chan<- LogLine, errCh chan<- error, containerName, stream string) {
 	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 0, 1<<20), 1<<20) // 1MB max line size
 	for scanner.Scan() {
 		line := scanner.Text()
 		logLine, err := parseLogLine(line, containerName, stream)

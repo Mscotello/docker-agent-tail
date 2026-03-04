@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -79,6 +80,11 @@ func FormatJSONL(line docker.LogLine) []byte {
 		"stream":    line.Stream,
 		"message":   content,
 	}
-	data, _ := json.Marshal(envelope)
+	data, err := json.Marshal(envelope)
+	if err != nil {
+		// Fall back to a minimal valid JSON line on marshal error
+		fallback := fmt.Sprintf(`{"ts":%q,"container":%q,"message":"marshal error"}`, ts, line.ContainerName)
+		return append([]byte(fallback), '\n')
+	}
 	return append(data, '\n')
 }

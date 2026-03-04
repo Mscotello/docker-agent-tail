@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Mscotello/docker-agent-tail/internal/docker"
@@ -20,6 +21,10 @@ type LogWriter struct {
 	done           chan struct{}
 	queue          chan logEntry
 	mu             sync.Mutex
+	closed         int32          // atomic flag: 1 = closed
+	flusherWg      sync.WaitGroup // tracks flusher goroutine completion
+	writeErrOnce   sync.Map       // rate-limit write error warnings per container
+	onWriteError   func(containerName string, err error) // optional callback for testing
 }
 
 // logEntry is an internal queue entry for thread-safe writing.
@@ -46,18 +51,23 @@ func NewLogWriter(sessionDir string) (*LogWriter, error) {
 	}
 
 	// Start background flusher
+	w.flusherWg.Add(1)
 	go w.flusher()
 
 	return w, nil
 }
 
-// Write queues a log line for writing.
+// Write queues a log line for writing. Silently drops if writer is closed.
 func (w *LogWriter) Write(line docker.LogLine) {
+	if atomic.LoadInt32(&w.closed) != 0 {
+		return
+	}
 	w.queue <- logEntry{line: line}
 }
 
 // flusher processes queued log entries and periodically flushes.
 func (w *LogWriter) flusher() {
+	defer w.flusherWg.Done()
 	for {
 		select {
 		case entry := <-w.queue:
@@ -89,11 +99,27 @@ func (w *LogWriter) writeLine(line docker.LogLine) {
 	// Write to per-container file
 	containerFile, err := w.getOrCreateFile(line.ContainerName)
 	if err == nil {
-		_, _ = containerFile.Write(jsonl)
+		if _, werr := containerFile.Write(jsonl); werr != nil {
+			w.reportWriteError(line.ContainerName, werr)
+		}
 	}
 
 	// Write to combined file
-	_, _ = w.combinedFile.Write(jsonl)
+	if _, werr := w.combinedFile.Write(jsonl); werr != nil {
+		w.reportWriteError("combined", werr)
+	}
+}
+
+// reportWriteError logs a write error to stderr, rate-limited to once per target.
+func (w *LogWriter) reportWriteError(target string, err error) {
+	if _, loaded := w.writeErrOnce.LoadOrStore(target, true); loaded {
+		return
+	}
+	if w.onWriteError != nil {
+		w.onWriteError(target, err)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "Warning: failed to write log for %s: %v\n", target, err)
 }
 
 // getOrCreateFile returns the file handle for a container, creating if needed.
@@ -125,9 +151,10 @@ func (w *LogWriter) flush() {
 
 // Close flushes and closes all files.
 func (w *LogWriter) Close() error {
+	atomic.StoreInt32(&w.closed, 1)
 	w.flushTicker.Stop()
 	close(w.done)
-	time.Sleep(100 * time.Millisecond) // Allow flusher goroutine to finish
+	w.flusherWg.Wait() // Wait for flusher to drain queue and finish
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
