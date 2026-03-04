@@ -1,0 +1,13 @@
+# Binary
+docker-agent-tail
+dist/
+
+# Logs output
+logs/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/

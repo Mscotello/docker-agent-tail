@@ -1,0 +1,41 @@
+version: 2
+
+project_name: docker-agent-tail
+
+builds:
+  - id: docker-agent-tail
+    main: .
+    binary: docker-agent-tail
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+
+archives:
+  - format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  use: github
+
+brews:
+  - name: docker-agent-tail
+    repository:
+      owner: scotello
+      name: homebrew-docker-agent-tail
+    homepage: "https://docker-agent-tail.dev"
+    description: "Auto-discover Docker containers, tail their logs, and write structured files for AI agents"
+    license: MIT
+    test: |
+      system "#{bin}/docker-agent-tail", "--help"
