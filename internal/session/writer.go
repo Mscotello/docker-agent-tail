@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/scotello/docker-agent-tail/internal/docker"
+	"github.com/Mscotello/docker-agent-tail/internal/docker"
 )
 
 // LogWriter writes logs to per-container files and a combined log file.

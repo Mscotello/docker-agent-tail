@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/fatih/color"
-	"github.com/scotello/docker-agent-tail/internal/docker"
+	"github.com/Mscotello/docker-agent-tail/internal/docker"
 )
 
 // OutputWriter handles terminal output with colors and filtering.

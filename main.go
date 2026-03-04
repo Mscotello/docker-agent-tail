@@ -15,9 +15,9 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/scotello/docker-agent-tail/internal/cli"
-	"github.com/scotello/docker-agent-tail/internal/docker"
-	"github.com/scotello/docker-agent-tail/internal/session"
+	"github.com/Mscotello/docker-agent-tail/internal/cli"
+	"github.com/Mscotello/docker-agent-tail/internal/docker"
+	"github.com/Mscotello/docker-agent-tail/internal/session"
 )
 
 var Version = "dev"

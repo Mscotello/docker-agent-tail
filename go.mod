@@ -1,4 +1,4 @@
-module github.com/scotello/docker-agent-tail
+module github.com/Mscotello/docker-agent-tail
 
 go 1.25.6
 

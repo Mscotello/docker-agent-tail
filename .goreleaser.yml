@@ -32,9 +32,9 @@ changelog:
 brews:
   - name: docker-agent-tail
     repository:
-      owner: scotello
+      owner: Mscotello
       name: homebrew-docker-agent-tail
-    homepage: "https://docker-agent-tail.dev"
+    homepage: "https://docker-agent-tail.michaelscotello.com"
     description: "Auto-discover Docker containers, tail their logs, and write structured files for AI agents"
     license: MIT
     test: |

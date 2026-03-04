@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/scotello/docker-agent-tail/internal/docker"
+	"github.com/Mscotello/docker-agent-tail/internal/docker"
 )
 
 func TestLogWriter(t *testing.T) {

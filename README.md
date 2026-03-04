@@ -19,20 +19,20 @@ CLI tool that auto-discovers Docker containers, tails their logs, and writes str
 ### Homebrew
 
 ```bash
-brew install scotello/docker-agent-tail/docker-agent-tail
+brew install Mscotello/docker-agent-tail/docker-agent-tail
 ```
 
 ### From GitHub Releases
 
 ```bash
 # Direct download and install
-curl -sL https://docker-agent-tail.dev/install.sh | sh
+curl -sSL https://github.com/Mscotello/docker-agent-tail/releases/latest/download/install.sh | bash
 ```
 
 ### Go Install
 
 ```bash
-go install github.com/scotello/docker-agent-tail@latest
+go install github.com/Mscotello/docker-agent-tail@latest
 ```
 
 ## Quick Start
@@ -99,7 +99,7 @@ Combined logs (`combined.log`):
 
 ## Documentation
 
-Full documentation available at [docker-agent-tail.dev](https://docker-agent-tail.dev)
+Full documentation available at [docker-agent-tail.michaelscotello.com](https://docker-agent-tail.michaelscotello.com)
 
 ## Development
 
@@ -121,7 +121,7 @@ make release-snapshot
 
 - Docker daemon running and accessible
 - Docker log driver must be `json-file` or `journald`
-- Go 1.22+ (for building from source)
+- Go 1.25+ (for building from source)
 
 ## License
 
