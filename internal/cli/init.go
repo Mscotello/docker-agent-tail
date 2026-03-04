@@ -115,6 +115,11 @@ Structured JSON from containers is merged with metadata:
 
   docker-agent-tail init    # creates agent config files for Claude/Cursor/Windsurf
 
+## Log viewing with lnav
+
+  docker-agent-tail lnav-install   # one-time setup
+  lnav logs/latest/combined.jsonl  # view with filtering, SQL, colors
+
 ## Documentation
 
   https://docker-agent-tail.michaelscotello.com

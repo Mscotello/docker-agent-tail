@@ -82,6 +82,12 @@ func main() {
 		case "agent-help":
 			fmt.Print(cli.AgentHelp())
 			os.Exit(0)
+		case "lnav-install":
+			if err := cli.RunLnavInstall(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			os.Exit(0)
 		case "clean":
 			retain := 5
 			if len(args) > 1 {
@@ -230,6 +236,7 @@ Commands:
   init          Set up AI agent config files (.claude, .cursor, .windsurf)
   agent-help    Print usage guide for AI coding agents
   clean         Remove old log sessions (--retain N, default 5)
+  lnav-install  Install lnav format for viewing logs with lnav
 
 Flags:
 `)
