@@ -47,8 +47,8 @@ func TestRunInit(t *testing.T) {
 		if !strings.Contains(content, "logs/latest/combined.jsonl") {
 			t.Fatal("skill file missing log path")
 		}
-		if !strings.Contains(content, "Debugging workflow") {
-			t.Fatal("skill file missing debugging workflow")
+		if !strings.Contains(content, "Querying logs with lnav") {
+			t.Fatal("skill file missing lnav query section")
 		}
 	})
 

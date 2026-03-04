@@ -24,21 +24,29 @@ Skill for working with Docker container logs tailed by docker-agent-tail.
 - Per-container: ` + "`logs/latest/<container-name>.jsonl`" + `
 - Metadata: ` + "`logs/latest/metadata.json`" + `
 
-## Debugging workflow — lnav (recommended)
+## Querying logs with lnav (recommended)
 
-lnav is a terminal log viewer with filtering, SQL, and color-coded levels:
+Use lnav in non-interactive mode (` + "`-n`" + `) with ` + "`-c`" + ` to run SQL queries from scripts or agents:
 ` + "```bash" + `
-docker-agent-tail lnav                    # open latest session
-lnav logs/latest/combined.jsonl           # open specific file
+# Count log lines per container
+lnav -n -c ';SELECT container, count(*) AS cnt FROM log GROUP BY container ORDER BY cnt DESC' logs/latest/combined.jsonl
+
+# Find all errors
+lnav -n -c ';SELECT log_time, container, log_body FROM log WHERE level = "error"' logs/latest/combined.jsonl
+
+# Errors in the last 5 minutes
+lnav -n -c ';SELECT log_time, container, log_body FROM log WHERE level = "error" AND log_time > datetime("now", "-5 minutes")' logs/latest/combined.jsonl
+
+# Log volume by container and level
+lnav -n -c ';SELECT container, level, count(*) FROM log GROUP BY container, level' logs/latest/combined.jsonl
+
+# Filter to a single container
+lnav -n -c ':filter-in api' -c ':write-to -' logs/latest/combined.jsonl
 ` + "```" + `
 
-Key lnav commands:
-- ` + "`:filter-in error`" + ` — show only errors
-- ` + "`:filter-in api`" + ` — show only one container
-- ` + "`;SELECT container, count(*) FROM log GROUP BY container`" + ` — SQL queries
-- ` + "`/timeout|refused`" + ` — regex search
+Interactive mode (for humans): ` + "`docker-agent-tail lnav`" + `
 
-## Debugging workflow — grep/jq fallback
+## Fallback — grep/jq
 
 If lnav is not available:
 1. Read ` + "`logs/latest/combined.jsonl`" + ` for overview
@@ -83,28 +91,35 @@ Logs are now being written to disk as JSON Lines. Read them anytime:
   logs/latest/<name>.jsonl      — per-container logs
   logs/latest/metadata.json     — session info (containers, start time)
 
-## Debugging workflow — lnav (recommended)
+## Querying logs with lnav (recommended)
 
-lnav is a terminal log viewer with filtering, SQL queries, and color-coded
-log levels. The lnav format is auto-installed on first run.
+lnav is a log viewer with SQL queries, filtering, and color-coded levels.
+The lnav format is auto-installed on first run.
 
-  docker-agent-tail lnav                    # open latest session in lnav
-  lnav logs/latest/combined.jsonl           # open a specific file
+Use lnav -n (non-interactive) with -c to query logs from scripts or agents:
 
-Key lnav commands:
-  :filter-in error                          # show only errors
-  :filter-in api                            # show only one container
-  :set-min-log-level warning                # hide debug/info
-  ;SELECT container, count(*) FROM log GROUP BY container   # SQL
-  /timeout|connection refused               # regex search
-  t                                         # timeline/histogram view
+  # Count log lines per container
+  lnav -n -c ';SELECT container, count(*) AS cnt FROM log GROUP BY container ORDER BY cnt DESC' logs/latest/combined.jsonl
 
+  # Find all errors
+  lnav -n -c ';SELECT log_time, container, log_body FROM log WHERE level = "error"' logs/latest/combined.jsonl
+
+  # Errors in the last 5 minutes
+  lnav -n -c ';SELECT log_time, container, log_body FROM log WHERE level = "error" AND log_time > datetime("now", "-5 minutes")' logs/latest/combined.jsonl
+
+  # Log volume by container and level
+  lnav -n -c ';SELECT container, level, count(*) FROM log GROUP BY container, level' logs/latest/combined.jsonl
+
+  # Filter to a single container and print
+  lnav -n -c ':filter-in api' -c ':write-to -' logs/latest/combined.jsonl
+
+Interactive mode (for humans): docker-agent-tail lnav
 Install lnav: brew install lnav (macOS) or apt install lnav (Linux)
 Manual format reinstall: docker-agent-tail lnav-install
 
-## Debugging workflow — grep/jq fallback
+## Fallback — grep/jq
 
-If lnav is not available, use standard tools:
+If lnav is not available:
 
   1. Read logs/latest/combined.jsonl for an overview
   2. Grep for "stream":"stderr" to find errors
