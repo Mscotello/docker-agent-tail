@@ -133,3 +133,122 @@ func TestFormatJSONL(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatJSONLLevelNormalization(t *testing.T) {
+	t.Parallel()
+
+	ts := time.Date(2026, 3, 4, 10, 30, 1, 789000000, time.UTC)
+	baseLine := docker.LogLine{
+		Timestamp:     ts,
+		Stream:        "stdout",
+		ContainerName: "api",
+	}
+
+	tests := []struct {
+		name       string
+		content    string
+		wantLevel  string // expected "level" value; empty means no level key
+		absentKeys []string
+	}{
+		{
+			name:      "level INFO normalized",
+			content:   `{"level":"INFO","msg":"started"}`,
+			wantLevel: "info",
+		},
+		{
+			name:       "lvl alias removed",
+			content:    `{"lvl":"warn","msg":"slow"}`,
+			wantLevel:  "warning",
+			absentKeys: []string{"lvl"},
+		},
+		{
+			name:       "s alias for MongoDB",
+			content:    `{"s":"I","c":"CONTROL","msg":"starting"}`,
+			wantLevel:  "info",
+			absentKeys: []string{"s"},
+		},
+		{
+			name:       "severity alias",
+			content:    `{"severity":"ERROR","msg":"fail"}`,
+			wantLevel:  "error",
+			absentKeys: []string{"severity"},
+		},
+		{
+			name:       "levelname alias",
+			content:    `{"levelname":"WARNING","msg":"caution"}`,
+			wantLevel:  "warning",
+			absentKeys: []string{"levelname"},
+		},
+		{
+			name:      "unknown level preserved lowercase",
+			content:   `{"level":"custom_thing"}`,
+			wantLevel: "custom_thing",
+		},
+		{
+			name:      "no level field present",
+			content:   `{"msg":"no level here"}`,
+			wantLevel: "",
+		},
+		{
+			name:      "level wins over s alias",
+			content:   `{"level":"info","s":"W"}`,
+			wantLevel: "info",
+		},
+		{
+			name:      "fatal level",
+			content:   `{"level":"CRITICAL","msg":"crash"}`,
+			wantLevel: "fatal",
+		},
+		{
+			name:      "debug level",
+			content:   `{"level":"DEBUG","msg":"verbose"}`,
+			wantLevel: "debug",
+		},
+		{
+			name:      "trace level",
+			content:   `{"level":"TRACE","msg":"very verbose"}`,
+			wantLevel: "trace",
+		},
+		{
+			name:      "plain text no level added",
+			content:   `plain text log`,
+			wantLevel: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			line := baseLine
+			line.Content = tt.content
+
+			got := FormatJSONL(line)
+
+			var obj map[string]any
+			if err := json.Unmarshal(got, &obj); err != nil {
+				t.Fatalf("invalid JSON: %v\noutput: %s", err, got)
+			}
+
+			level, hasLevel := obj["level"]
+			if tt.wantLevel == "" {
+				if hasLevel {
+					t.Errorf("expected no level key, got %q", level)
+				}
+			} else {
+				if !hasLevel {
+					t.Fatalf("expected level=%q, but key missing", tt.wantLevel)
+				}
+				if level != tt.wantLevel {
+					t.Errorf("level = %q, want %q", level, tt.wantLevel)
+				}
+			}
+
+			for _, key := range tt.absentKeys {
+				if _, ok := obj[key]; ok {
+					t.Errorf("expected alias key %q to be removed, but still present", key)
+				}
+			}
+		})
+	}
+}
