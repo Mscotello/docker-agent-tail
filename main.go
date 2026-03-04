@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -80,6 +81,34 @@ func main() {
 			os.Exit(0)
 		case "agent-help":
 			fmt.Print(cli.AgentHelp())
+			os.Exit(0)
+		case "clean":
+			retain := 5
+			if len(args) > 1 {
+				for i := 1; i < len(args); i++ {
+					if args[i] == "--retain" && i+1 < len(args) {
+						n, err := strconv.Atoi(args[i+1])
+						if err != nil || n < 0 {
+							fmt.Fprintf(os.Stderr, "Error: --retain must be a non-negative integer\n")
+							os.Exit(1)
+						}
+						retain = n
+					}
+				}
+			}
+			deleted, err := session.CleanSessions(*output, retain)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			remaining := 0
+			entries, _ := os.ReadDir(*output)
+			for _, e := range entries {
+				if e.IsDir() && e.Name() != "latest" {
+					remaining++
+				}
+			}
+			fmt.Printf("Removed %d sessions, kept %d\n", len(deleted), remaining)
 			os.Exit(0)
 		}
 	}
@@ -207,6 +236,7 @@ Auto-discover Docker containers and tail their logs.
 Commands:
   init          Set up AI agent config files (.claude, .cursor, .windsurf)
   agent-help    Print usage guide for AI coding agents
+  clean         Remove old log sessions (--retain N, default 5)
 
 Flags:
 `)

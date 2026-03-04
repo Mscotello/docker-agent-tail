@@ -16,12 +16,6 @@ CLI tool that auto-discovers Docker containers, tails their logs, and writes str
 
 ## Quick Install
 
-### Homebrew
-
-```bash
-brew install Mscotello/docker-agent-tail/docker-agent-tail
-```
-
 ### From GitHub Releases
 
 ```bash

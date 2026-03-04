@@ -102,6 +102,12 @@ Fields: ISO 8601 timestamp, container name (fixed-width), stream type, message.
   3. Check per-container logs for detailed context
   4. Review logs/latest/metadata.json for container info
 
+## Cleanup
+
+  docker-agent-tail clean              # keep 5 most recent sessions (default)
+  docker-agent-tail clean --retain 10  # keep 10 most recent
+  docker-agent-tail clean --retain 0   # delete all sessions
+
 ## Setup for your project
 
   docker-agent-tail init    # creates agent config files for Claude/Cursor/Windsurf
