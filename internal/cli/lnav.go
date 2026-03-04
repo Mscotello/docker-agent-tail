@@ -3,7 +3,9 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"syscall"
 )
 
 // lnavFormatJSON is the lnav format definition for docker-agent-tail JSONL.
@@ -53,6 +55,66 @@ const lnavFormatJSON = `{
 func LnavFormatJSON() string {
 	return lnavFormatJSON
 }
+
+// LnavFormatInstalled reports whether the lnav format is installed at the default location.
+func LnavFormatInstalled() bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(home, ".lnav", "formats", "installed", "docker-agent-tail.json"))
+	return err == nil
+}
+
+// EnsureLnavFormat installs the lnav format if it is not already present.
+// Errors are non-fatal — lnav is optional. Returns true if the format was installed.
+func EnsureLnavFormat() bool {
+	if LnavFormatInstalled() {
+		return false
+	}
+	if err := RunLnavInstallTo(""); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not auto-install lnav format: %v\n", err)
+		return false
+	}
+	return true
+}
+
+// RunLnav opens the latest (or specified) session in lnav.
+func RunLnav(outputDir string, sessionName string) error {
+	// Check if lnav is installed
+	lnavPath, err := execLookPath("lnav")
+	if err != nil {
+		return fmt.Errorf("lnav is not installed\n\nInstall it:\n  macOS:  brew install lnav\n  Linux:  apt install lnav\n\nMore info: https://lnav.org")
+	}
+
+	// Determine the log file path
+	var logPath string
+	if sessionName != "" {
+		logPath = filepath.Join(outputDir, sessionName, "combined.jsonl")
+	} else {
+		logPath = filepath.Join(outputDir, "latest", "combined.jsonl")
+	}
+
+	// Check that the file exists
+	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+		if sessionName != "" {
+			return fmt.Errorf("session not found: %s", filepath.Join(outputDir, sessionName))
+		}
+		return fmt.Errorf("no log sessions found in %s\n\nStart tailing first:\n  docker-agent-tail --all", outputDir)
+	}
+
+	// Ensure lnav format is installed
+	EnsureLnavFormat()
+
+	// Exec lnav (replaces the current process)
+	return execSyscall(lnavPath, []string{"lnav", logPath}, os.Environ())
+}
+
+// execLookPath finds an executable in PATH. Variable for testability.
+var execLookPath = exec.LookPath
+
+// execSyscall replaces the current process with the given command. Variable for testability.
+var execSyscall = syscall.Exec
 
 // RunLnavInstall installs the lnav format definition to ~/.lnav/formats/installed/.
 func RunLnavInstall() error {

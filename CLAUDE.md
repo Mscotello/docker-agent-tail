@@ -88,6 +88,7 @@ Structured JSON from containers is merged with metadata:
 - **All checks must pass before committing**: Run `go build ./...`, `go test -race ./...`, and `golangci-lint run` — all must pass. Do not commit code that breaks the build, fails tests, or has lint violations.
 - **Scope by package/concern**: Prefer commits scoped to a single package (e.g., `internal/docker`) or a single cross-cutting concern. If a change touches 3+ packages, consider whether it can be split.
 - **Commit message format**: Imperative mood, lowercase, no period. First line under 72 chars. Add a blank line and body for non-trivial changes explaining *why*.
+- **Docs ship with code**: When a commit changes user-facing behavior (flags, output format, commands, etc.), update both `README.md` in this repo and the relevant Mintlify docs pages in the `docker-agent-tail-docs` repo (`~/WorkSpace/docker-agent-tail-docs/`) in the same commit.
 
 ## Important Gotchas
 

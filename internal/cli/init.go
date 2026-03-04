@@ -24,12 +24,33 @@ Skill for working with Docker container logs tailed by docker-agent-tail.
 - Per-container: ` + "`logs/latest/<container-name>.jsonl`" + `
 - Metadata: ` + "`logs/latest/metadata.json`" + `
 
+## Debugging workflow — lnav (recommended)
+
+lnav is a terminal log viewer with filtering, SQL, and color-coded levels:
+` + "```bash" + `
+docker-agent-tail lnav                    # open latest session
+lnav logs/latest/combined.jsonl           # open specific file
+` + "```" + `
+
+Key lnav commands:
+- ` + "`:filter-in error`" + ` — show only errors
+- ` + "`:filter-in api`" + ` — show only one container
+- ` + "`;SELECT container, count(*) FROM log GROUP BY container`" + ` — SQL queries
+- ` + "`/timeout|refused`" + ` — regex search
+
+## Debugging workflow — grep/jq fallback
+
+If lnav is not available:
+1. Read ` + "`logs/latest/combined.jsonl`" + ` for overview
+2. Grep for ` + "`\"stream\":\"stderr\"`" + ` to find errors
+3. Use ` + "`jq 'select(.level==\"error\")'`" + ` on JSONL files
+4. Check per-container logs for detailed output
+
 ## Log format (JSON Lines)
 
 Each line is a JSON object. Plain text messages are wrapped in an envelope:
 ` + "```json" + `
 {"ts":"2026-03-04T10:30:01.789Z","container":"api","stream":"stdout","message":"GET /api/users 200 12ms"}
-{"ts":"2026-03-04T10:30:01.800Z","container":"api","stream":"stderr","message":"WARN: connection pool exhausted"}
 ` + "```" + `
 
 Structured JSON from containers is merged with metadata:
@@ -40,16 +61,9 @@ Structured JSON from containers is merged with metadata:
 ## Common commands
 
 - Tail all containers: ` + "`docker-agent-tail --all`" + `
-- Tail specific containers: ` + "`docker-agent-tail --name api --name worker`" + `
+- Tail specific containers: ` + "`docker-agent-tail --names api,worker`" + `
 - Filter noise: ` + "`docker-agent-tail --all --exclude 'healthcheck|ping'`" + `
-- Last 100 lines: ` + "`docker-agent-tail --all --tail 100`" + `
-
-## Debugging workflow
-
-1. Read ` + "`logs/latest/combined.jsonl`" + ` for overview
-2. Grep for ` + "`\"stream\":\"stderr\"`" + ` to find errors
-3. Check per-container logs for detailed output
-4. Review ` + "`logs/latest/metadata.json`" + ` for container info
+- View in lnav: ` + "`docker-agent-tail lnav`" + `
 `
 )
 
@@ -69,23 +83,58 @@ Logs are now being written to disk as JSON Lines. Read them anytime:
   logs/latest/<name>.jsonl      — per-container logs
   logs/latest/metadata.json     — session info (containers, start time)
 
+## Debugging workflow — lnav (recommended)
+
+lnav is a terminal log viewer with filtering, SQL queries, and color-coded
+log levels. The lnav format is auto-installed on first run.
+
+  docker-agent-tail lnav                    # open latest session in lnav
+  lnav logs/latest/combined.jsonl           # open a specific file
+
+Key lnav commands:
+  :filter-in error                          # show only errors
+  :filter-in api                            # show only one container
+  :set-min-log-level warning                # hide debug/info
+  ;SELECT container, count(*) FROM log GROUP BY container   # SQL
+  /timeout|connection refused               # regex search
+  t                                         # timeline/histogram view
+
+Install lnav: brew install lnav (macOS) or apt install lnav (Linux)
+Manual format reinstall: docker-agent-tail lnav-install
+
+## Debugging workflow — grep/jq fallback
+
+If lnav is not available, use standard tools:
+
+  1. Read logs/latest/combined.jsonl for an overview
+  2. Grep for "stream":"stderr" to find errors
+  3. jq 'select(.level=="error")' logs/latest/combined.jsonl
+  4. Check per-container logs for detailed context
+  5. Review logs/latest/metadata.json for container info
+
 ## Log format (JSON Lines)
 
 Plain text container output is wrapped in a JSON envelope:
 
   {"ts":"2026-03-04T10:30:01.789Z","container":"api","stream":"stdout","message":"GET /api/users 200 12ms"}
-  {"ts":"2026-03-04T10:30:01.800Z","container":"api","stream":"stderr","message":"WARN: connection pool exhausted"}
 
 Structured JSON from containers is merged with metadata:
 
   {"ts":"2026-03-04T10:30:02.100Z","container":"worker","stream":"stdout","level":"info","msg":"Job completed","job_id":"send-email-123"}
 
-## Useful commands
+## Common commands
 
   docker-agent-tail --all                    # tail all containers
   docker-agent-tail --names api,web          # tail specific containers
   docker-agent-tail --all --exclude 'health' # filter out noise
   docker-agent-tail --all --since 5m         # last 5 minutes only
+  docker-agent-tail --compose                # auto-discover compose services
+
+## Common exclude patterns
+
+  --exclude 'healthcheck|health.*check'      # health check endpoints
+  --exclude 'ping|alive'                     # liveness probes
+  --exclude 'GET /favicon'                   # browser noise
 
 ## Background usage
 
@@ -98,13 +147,6 @@ Structured JSON from containers is merged with metadata:
   # Stop it
   pkill -f docker-agent-tail
 
-## Debugging workflow
-
-  1. Read logs/latest/combined.jsonl for an overview
-  2. Grep for "stream":"stderr" to find errors
-  3. Check per-container logs for detailed context
-  4. Review logs/latest/metadata.json for container info
-
 ## Cleanup
 
   docker-agent-tail clean              # keep 5 most recent sessions (default)
@@ -114,11 +156,6 @@ Structured JSON from containers is merged with metadata:
 ## Setup for your project
 
   docker-agent-tail init    # creates agent config files for Claude/Cursor/Windsurf
-
-## Log viewing with lnav
-
-  docker-agent-tail lnav-install   # one-time setup
-  lnav logs/latest/combined.jsonl  # view with filtering, SQL, colors
 
 ## Documentation
 

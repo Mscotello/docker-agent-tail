@@ -2,8 +2,10 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -90,4 +92,137 @@ func TestRunLnavInstallIdempotent(t *testing.T) {
 	if !json.Valid(data) {
 		t.Error("installed file is not valid JSON after second install")
 	}
+}
+
+func TestRunLnav(t *testing.T) {
+	// These subtests mutate package-level variables, so they must run sequentially.
+
+	t.Run("not installed", func(t *testing.T) {
+		origLookPath := execLookPath
+		t.Cleanup(func() { execLookPath = origLookPath })
+		execLookPath = func(file string) (string, error) {
+			return "", errors.New("not found")
+		}
+
+		err := RunLnav(t.TempDir(), "")
+		if err == nil {
+			t.Fatal("expected error when lnav not installed")
+		}
+		if got := err.Error(); !strings.Contains(got, "lnav is not installed") {
+			t.Errorf("error = %q, want to contain 'lnav is not installed'", got)
+		}
+	})
+
+	t.Run("no sessions", func(t *testing.T) {
+		origLookPath := execLookPath
+		t.Cleanup(func() { execLookPath = origLookPath })
+		execLookPath = func(file string) (string, error) {
+			return "/usr/bin/lnav", nil
+		}
+
+		dir := t.TempDir()
+		err := RunLnav(dir, "")
+		if err == nil {
+			t.Fatal("expected error when no sessions exist")
+		}
+		if got := err.Error(); !strings.Contains(got, "no log sessions found") {
+			t.Errorf("error = %q, want to contain 'no log sessions found'", got)
+		}
+	})
+
+	t.Run("session not found", func(t *testing.T) {
+		origLookPath := execLookPath
+		t.Cleanup(func() { execLookPath = origLookPath })
+		execLookPath = func(file string) (string, error) {
+			return "/usr/bin/lnav", nil
+		}
+
+		dir := t.TempDir()
+		err := RunLnav(dir, "2026-01-01-000000")
+		if err == nil {
+			t.Fatal("expected error for missing session")
+		}
+		if got := err.Error(); !strings.Contains(got, "session not found") {
+			t.Errorf("error = %q, want to contain 'session not found'", got)
+		}
+	})
+
+	t.Run("exec latest", func(t *testing.T) {
+		origLookPath := execLookPath
+		origExec := execSyscall
+		t.Cleanup(func() {
+			execLookPath = origLookPath
+			execSyscall = origExec
+		})
+
+		execLookPath = func(file string) (string, error) {
+			return "/usr/bin/lnav", nil
+		}
+
+		var calledPath string
+		var calledArgs []string
+		execSyscall = func(argv0 string, argv []string, envv []string) error {
+			calledPath = argv0
+			calledArgs = argv
+			return nil
+		}
+
+		dir := t.TempDir()
+		sessionDir := filepath.Join(dir, "latest")
+		if err := os.MkdirAll(sessionDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sessionDir, "combined.jsonl"), []byte("{}"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := RunLnav(dir, "")
+		if err != nil {
+			t.Fatalf("RunLnav() error: %v", err)
+		}
+		if calledPath != "/usr/bin/lnav" {
+			t.Errorf("exec path = %q, want /usr/bin/lnav", calledPath)
+		}
+		wantArgs := []string{"lnav", filepath.Join(dir, "latest", "combined.jsonl")}
+		if len(calledArgs) != len(wantArgs) || calledArgs[0] != wantArgs[0] || calledArgs[1] != wantArgs[1] {
+			t.Errorf("exec args = %v, want %v", calledArgs, wantArgs)
+		}
+	})
+
+	t.Run("exec specific session", func(t *testing.T) {
+		origLookPath := execLookPath
+		origExec := execSyscall
+		t.Cleanup(func() {
+			execLookPath = origLookPath
+			execSyscall = origExec
+		})
+
+		execLookPath = func(file string) (string, error) {
+			return "/usr/bin/lnav", nil
+		}
+
+		var calledArgs []string
+		execSyscall = func(argv0 string, argv []string, envv []string) error {
+			calledArgs = argv
+			return nil
+		}
+
+		dir := t.TempDir()
+		sessionDir := filepath.Join(dir, "2026-03-04-143700")
+		if err := os.MkdirAll(sessionDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sessionDir, "combined.jsonl"), []byte("{}"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := RunLnav(dir, "2026-03-04-143700")
+		if err != nil {
+			t.Fatalf("RunLnav() error: %v", err)
+		}
+		wantPath := filepath.Join(dir, "2026-03-04-143700", "combined.jsonl")
+		if len(calledArgs) < 2 || calledArgs[1] != wantPath {
+			t.Errorf("exec args = %v, want path %s", calledArgs, wantPath)
+		}
+	})
 }

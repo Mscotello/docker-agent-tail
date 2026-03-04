@@ -80,6 +80,19 @@ func main() {
 		case "agent-help":
 			fmt.Print(cli.AgentHelp())
 			os.Exit(0)
+		case "lnav":
+			var lnavSession string
+			for i := 1; i < len(args); i++ {
+				if args[i] == "--session" && i+1 < len(args) {
+					lnavSession = args[i+1]
+					i++
+				}
+			}
+			if err := cli.RunLnav(*output, lnavSession); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			os.Exit(0)
 		case "lnav-install":
 			if err := cli.RunLnavInstall(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -116,6 +129,9 @@ func main() {
 			os.Exit(0)
 		}
 	}
+
+	// Auto-install lnav format on first run (non-fatal)
+	cli.EnsureLnavFormat()
 
 	// Setup context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -168,6 +184,12 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: creating session: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Print session info and lnav hint
+	fmt.Printf("Writing to %s\n", sess.Dir)
+	if cli.LnavFormatInstalled() {
+		fmt.Printf("View with: lnav %s/combined.jsonl\n", filepath.Join(*output, "latest"))
 	}
 
 	// Create exclude filter
@@ -245,10 +267,18 @@ Commands:
   agent-help    Print usage guide for AI coding agents
   clean         Remove old log sessions (--retain N, default 5)
   lnav-install  Install lnav format for viewing logs with lnav
+  lnav          Open latest session in lnav
 
 Flags:
 `)
 	pflag.PrintDefaults()
+	fmt.Fprintf(os.Stderr, `
+Examples:
+  docker-agent-tail --compose                      # auto-discover from compose project
+  docker-agent-tail --all --exclude 'health'       # filter health checks
+  docker-agent-tail --all --since 5m               # last 5 minutes
+  docker-agent-tail lnav                           # view latest session in lnav
+`)
 }
 
 // containerRef holds a reference to a discovered container
