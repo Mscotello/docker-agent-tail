@@ -67,9 +67,13 @@ func CleanSessions(outputDir string, retain int) ([]string, error) {
 		}
 		if latestDeleted {
 			_ = os.Remove(latestLink)
-			// Point to newest remaining session if any are left
+			// Point to newest remaining session if any are left (atomic via rename)
 			if retain > 0 && len(sessions) > len(toDelete) {
-				_ = os.Symlink(sessions[0], latestLink)
+				tmpLink := latestLink + ".tmp"
+				_ = os.Remove(tmpLink)
+				if err := os.Symlink(sessions[0], tmpLink); err == nil {
+					_ = os.Rename(tmpLink, latestLink)
+				}
 			}
 		}
 	}

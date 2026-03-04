@@ -214,9 +214,11 @@ func main() {
 	var sinceTime time.Time
 	if *since != "" {
 		d, err := time.ParseDuration(*since)
-		if err == nil {
-			sinceTime = time.Now().Add(-d)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: invalid --since duration %q: %v\n", *since, err)
+			os.Exit(1)
 		}
+		sinceTime = time.Now().Add(-d)
 	}
 
 	// Start streaming logs from initial containers
@@ -263,7 +265,7 @@ func printUsage() {
 Auto-discover Docker containers and tail their logs.
 
 Commands:
-  init          Set up AI agent config files (.claude, .cursor, .windsurf)
+  init          Set up AI agent config files (CLAUDE.md, .mcp.json, skills)
   agent-help    Print usage guide for AI coding agents
   clean         Remove old log sessions (--retain N, default 5)
   lnav-install  Install lnav format for viewing logs with lnav

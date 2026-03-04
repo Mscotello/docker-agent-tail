@@ -62,11 +62,40 @@ func TestNewSession(t *testing.T) {
 				t.Errorf("containers mismatch: got %d, want %d", len(meta.Containers), len(tt.containers))
 			}
 
-			// Check latest symlink
+			// Check latest symlink points to correct session
 			latestLink := filepath.Join(tmpDir, "latest")
 			if _, err := os.Lstat(latestLink); os.IsNotExist(err) {
 				t.Errorf("latest symlink not created")
 			}
+			target, err := os.Readlink(latestLink)
+			if err != nil {
+				t.Fatalf("reading latest symlink: %v", err)
+			}
+			wantTarget := sess.StartTime.Format("2006-01-02-150405")
+			if target != wantTarget {
+				t.Errorf("latest symlink = %q, want %q", target, wantTarget)
+			}
 		})
+	}
+}
+
+func TestNewSession_symlink_update(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	// Create first session
+	sess1, err := NewSession(tmpDir, "cmd1", []string{"a"})
+	if err != nil {
+		t.Fatalf("first NewSession() error = %v", err)
+	}
+
+	// Verify symlink points to first session
+	latestLink := filepath.Join(tmpDir, "latest")
+	target1, err := os.Readlink(latestLink)
+	if err != nil {
+		t.Fatalf("reading latest symlink: %v", err)
+	}
+	if target1 != filepath.Base(sess1.Dir) {
+		t.Errorf("latest = %q, want %q", target1, filepath.Base(sess1.Dir))
 	}
 }

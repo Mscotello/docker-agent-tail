@@ -1,13 +1,22 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
+	claudeMDMarker = "## Docker Container Logs"
+
+	claudeMDContent = `## Docker Container Logs
+
+**Never use ` + "`docker logs`" + ` directly.** Use ` + "`docker-agent-tail`" + ` to capture structured JSONL logs.
+Logs are at ` + "`logs/latest/combined.jsonl`" + `. Query with ` + "`lnav`" + ` or read directly.
+Run ` + "`docker-agent-tail --help`" + ` for flags. See ` + "`.claude/skills/docker-logs.md`" + ` for full usage.
+`
+
 	contextContent = `## Docker Container Logs
 
 This project uses ` + "`docker-agent-tail`" + ` to tail Docker container logs to disk.
@@ -175,6 +184,7 @@ Structured JSON from containers is merged with metadata:
 ## Documentation
 
   https://docker-agent-tail.michaelscotello.com
+  Full docs (agent-readable): https://docker-agent-tail.michaelscotello.com/llms-full.txt
 `
 }
 
@@ -191,31 +201,23 @@ func RunInit(outputDir string) error {
 	}
 
 	// Detect which agents are present
-	claudeDir := filepath.Join(cwd, ".claude")
 	cursorDir := filepath.Join(cwd, ".cursor")
 	windsurfDir := filepath.Join(cwd, ".windsurf")
 
-	claudeExists := dirExists(claudeDir)
 	cursorExists := dirExists(cursorDir)
 	windsurfExists := dirExists(windsurfDir)
 
-	if !claudeExists && !cursorExists && !windsurfExists {
-		return fmt.Errorf("no agent directories found (.claude, .cursor, or .windsurf)")
+	// Always create .claude/skills/docker-logs.md (primary discovery mechanism)
+	if err := initClaudeSkill(cwd); err != nil {
+		return fmt.Errorf("initializing claude skill: %w", err)
 	}
+	fmt.Printf("Initialized .claude/skills/docker-logs.md\n")
 
-	// Initialize .mcp.json (always)
-	if err := initMCPJSON(cwd); err != nil {
-		return fmt.Errorf("initializing .mcp.json: %w", err)
+	// Always update CLAUDE.md (lean pointer to skill)
+	if err := initClaudeMD(cwd); err != nil {
+		return fmt.Errorf("initializing CLAUDE.md: %w", err)
 	}
-	fmt.Printf("Initialized .mcp.json\n")
-
-	// Initialize .claude/skills/docker-logs.md if .claude dir exists
-	if claudeExists {
-		if err := initClaudeSkill(cwd); err != nil {
-			return fmt.Errorf("initializing claude skill: %w", err)
-		}
-		fmt.Printf("Initialized .claude/skills/docker-logs.md\n")
-	}
+	fmt.Printf("Initialized CLAUDE.md\n")
 
 	// Initialize .cursor/rules/ if .cursor dir exists
 	if cursorExists {
@@ -231,6 +233,46 @@ func RunInit(outputDir string) error {
 			return fmt.Errorf("initializing .windsurf/rules: %w", err)
 		}
 		fmt.Printf("Initialized .windsurf/rules/docker-agent-tail.md\n")
+	}
+
+	return nil
+}
+
+// initClaudeMD appends the docker-agent-tail section to CLAUDE.md.
+// Creates the file if it doesn't exist. Idempotent — skips if marker already present.
+func initClaudeMD(cwd string) error {
+	claudeMDPath := filepath.Join(cwd, "CLAUDE.md")
+
+	existing, err := os.ReadFile(claudeMDPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading CLAUDE.md: %w", err)
+	}
+
+	// Already has our section — nothing to do
+	if strings.Contains(string(existing), claudeMDMarker) {
+		return nil
+	}
+
+	f, err := os.OpenFile(claudeMDPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("opening CLAUDE.md: %w", err)
+	}
+	defer f.Close()
+
+	// Add a blank line separator if file has existing content
+	if len(existing) > 0 && existing[len(existing)-1] != '\n' {
+		if _, err := f.WriteString("\n"); err != nil {
+			return fmt.Errorf("writing separator: %w", err)
+		}
+	}
+	if len(existing) > 0 {
+		if _, err := f.WriteString("\n"); err != nil {
+			return fmt.Errorf("writing separator: %w", err)
+		}
+	}
+
+	if _, err := f.WriteString(claudeMDContent); err != nil {
+		return fmt.Errorf("writing docker-agent-tail section: %w", err)
 	}
 
 	return nil
@@ -275,42 +317,3 @@ func initWindsurfRules(cwd string) error {
 	return os.WriteFile(ruleFile, []byte(contextContent+"\n"), 0644)
 }
 
-// MCPConfig represents the .mcp.json structure
-type MCPConfig struct {
-	Tools map[string]interface{} `json:"tools"`
-}
-
-// initMCPJSON initializes or updates .mcp.json
-func initMCPJSON(cwd string) error {
-	mcpPath := filepath.Join(cwd, ".mcp.json")
-
-	// Read existing config if it exists
-	var config MCPConfig
-	if data, err := os.ReadFile(mcpPath); err == nil {
-		if err := json.Unmarshal(data, &config); err != nil {
-			// If file exists but is invalid JSON, start fresh
-			config.Tools = make(map[string]interface{})
-		}
-	} else {
-		config.Tools = make(map[string]interface{})
-	}
-
-	// Ensure tools map exists
-	if config.Tools == nil {
-		config.Tools = make(map[string]interface{})
-	}
-
-	// Add or update docker-agent-tail entry
-	config.Tools["docker-agent-tail"] = map[string]interface{}{
-		"description": "Stream Docker container logs to disk with structured output",
-		"enabled":     true,
-	}
-
-	// Write back to file
-	data, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling .mcp.json: %w", err)
-	}
-
-	return os.WriteFile(mcpPath, append(data, '\n'), 0644)
-}

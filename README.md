@@ -21,6 +21,9 @@ That's it. Logs stream to your terminal and to `logs/latest/combined.jsonl`. You
 ## Quick Install
 
 ```bash
+# Homebrew (macOS/Linux)
+brew install Mscotello/tap/docker-agent-tail
+
 # Direct download
 curl -sSL https://github.com/Mscotello/docker-agent-tail/releases/latest/download/install.sh | bash
 
@@ -150,7 +153,7 @@ docker-agent-tail init
 docker-agent-tail [flags] [pattern...]
 
 Commands:
-  init          Set up AI agent config files (.claude, .cursor, .windsurf)
+  init          Set up AI agent config files (CLAUDE.md, .mcp.json, skills)
   agent-help    Print usage guide for AI coding agents
   clean         Remove old log sessions (--retain N, default 5)
   lnav          Open latest session in lnav
@@ -162,11 +165,15 @@ Flags:
   -c, --compose               Auto-discover from compose project
   -f, --follow                Reattach on restart (default: true)
   -e, --exclude strings       Regex patterns to exclude log lines
-  -m, --mute strings          Hide matching containers from terminal (still written to log files)
+  -m, --mute strings          Hide matching regex from terminal (still written to log files)
   -o, --output string         Output directory (default: "./logs")
   -s, --since string          Start from duration ago (e.g., "5m", "1h")
       --no-color              Disable terminal colors
+  -v, --version               Show version and exit
   -h, --help                  Show this help message
+
+Positional Arguments:
+  PATTERN                     Glob pattern to filter containers by name (e.g., "web-*")
 ```
 
 ## Log output format

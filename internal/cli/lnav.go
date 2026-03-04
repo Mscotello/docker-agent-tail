@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"syscall"
 )
 
@@ -93,9 +94,12 @@ func RunLnav(outputDir string, sessionName string) error {
 		return fmt.Errorf("lnav is not installed\n\nInstall it:\n  macOS:  brew install lnav\n  Linux:  apt install lnav\n\nMore info: https://lnav.org")
 	}
 
-	// Determine the log file path
+	// Validate and determine the log file path
 	var logPath string
 	if sessionName != "" {
+		if !sessionNamePattern.MatchString(sessionName) {
+			return fmt.Errorf("invalid session name %q (expected format: YYYY-MM-DD-HHMMSS)", sessionName)
+		}
 		logPath = filepath.Join(outputDir, sessionName, "combined.jsonl")
 	} else {
 		logPath = filepath.Join(outputDir, "latest", "combined.jsonl")
@@ -115,6 +119,9 @@ func RunLnav(outputDir string, sessionName string) error {
 	// Exec lnav (replaces the current process)
 	return execSyscall(lnavPath, []string{"lnav", logPath}, os.Environ())
 }
+
+// sessionNamePattern matches valid session directory names.
+var sessionNamePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-\d{6}$`)
 
 // execLookPath finds an executable in PATH. Variable for testability.
 var execLookPath = exec.LookPath

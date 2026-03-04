@@ -63,11 +63,15 @@ func NewSession(outputDir string, command string, containers []string) (*Session
 		return nil, fmt.Errorf("writing metadata: %w", err)
 	}
 
-	// Update logs/latest symlink
+	// Update logs/latest symlink (atomic via rename)
 	latestLink := filepath.Join(outputDir, "latest")
-	_ = os.Remove(latestLink) // Remove old symlink if it exists
-	if err := os.Symlink(sessionName, latestLink); err != nil {
+	tmpLink := latestLink + ".tmp"
+	_ = os.Remove(tmpLink)
+	if err := os.Symlink(sessionName, tmpLink); err != nil {
 		return nil, fmt.Errorf("creating latest symlink: %w", err)
+	}
+	if err := os.Rename(tmpLink, latestLink); err != nil {
+		return nil, fmt.Errorf("updating latest symlink: %w", err)
 	}
 
 	return session, nil

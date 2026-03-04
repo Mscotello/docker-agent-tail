@@ -130,6 +130,32 @@ func TestRunLnav(t *testing.T) {
 		}
 	})
 
+	t.Run("invalid session name", func(t *testing.T) {
+		origLookPath := execLookPath
+		t.Cleanup(func() { execLookPath = origLookPath })
+		execLookPath = func(file string) (string, error) {
+			return "/usr/bin/lnav", nil
+		}
+
+		dir := t.TempDir()
+		invalidNames := []string{
+			"../../../etc",
+			"not-a-timestamp",
+			"2026-03-04",
+			"latest",
+			"../../passwd",
+		}
+		for _, name := range invalidNames {
+			err := RunLnav(dir, name)
+			if err == nil {
+				t.Fatalf("expected error for invalid session name %q", name)
+			}
+			if got := err.Error(); !strings.Contains(got, "invalid session name") {
+				t.Errorf("error for %q = %q, want to contain 'invalid session name'", name, got)
+			}
+		}
+	})
+
 	t.Run("session not found", func(t *testing.T) {
 		origLookPath := execLookPath
 		t.Cleanup(func() { execLookPath = origLookPath })

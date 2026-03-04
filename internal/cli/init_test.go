@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,31 +8,41 @@ import (
 )
 
 func TestRunInit(t *testing.T) {
-	t.Run("no agent directories", func(t *testing.T) {
+	t.Run("no agent directories creates skill and CLAUDE.md", func(t *testing.T) {
 		t.Parallel()
 		tmpDir := t.TempDir()
 
 		err := RunInit(tmpDir)
-		if err == nil {
-			t.Fatal("expected error for no agent directories")
+		if err != nil {
+			t.Fatalf("expected success with no agent dirs, got: %v", err)
 		}
-		if !strings.Contains(err.Error(), "no agent directories found") {
-			t.Fatalf("unexpected error: %v", err)
+
+		// Skill file should always be created
+		skillPath := filepath.Join(tmpDir, ".claude", "skills", "docker-logs.md")
+		if _, err := os.Stat(skillPath); err != nil {
+			t.Fatal("skill file not created")
+		}
+
+		// CLAUDE.md should be created
+		if _, err := os.Stat(filepath.Join(tmpDir, "CLAUDE.md")); err != nil {
+			t.Fatal("CLAUDE.md not created")
+		}
+
+		// .mcp.json should NOT be created
+		if _, err := os.Stat(filepath.Join(tmpDir, ".mcp.json")); !os.IsNotExist(err) {
+			t.Fatal(".mcp.json should not be created (no MCP server)")
 		}
 	})
 
-	t.Run("with claude directory writes skill file", func(t *testing.T) {
+	t.Run("skill file always created even without .claude dir", func(t *testing.T) {
 		t.Parallel()
 		tmpDir := t.TempDir()
-
-		os.Mkdir(filepath.Join(tmpDir, ".claude"), 0755)
 
 		err := RunInit(tmpDir)
 		if err != nil {
 			t.Fatalf("RunInit failed: %v", err)
 		}
 
-		// Verify skill file was created
 		skillPath := filepath.Join(tmpDir, ".claude", "skills", "docker-logs.md")
 		data, err := os.ReadFile(skillPath)
 		if err != nil {
@@ -52,28 +61,71 @@ func TestRunInit(t *testing.T) {
 		}
 	})
 
-	t.Run("claude does not modify CLAUDE.md", func(t *testing.T) {
+	t.Run("creates CLAUDE.md with lean pointer to skill", func(t *testing.T) {
 		t.Parallel()
 		tmpDir := t.TempDir()
-
-		os.Mkdir(filepath.Join(tmpDir, ".claude"), 0755)
-
-		// Create existing CLAUDE.md
-		existingContent := "# My Project\n\nSome existing content\n"
-		claudeMdPath := filepath.Join(tmpDir, "CLAUDE.md")
-		os.WriteFile(claudeMdPath, []byte(existingContent), 0644)
 
 		if err := RunInit(tmpDir); err != nil {
 			t.Fatalf("RunInit failed: %v", err)
 		}
 
-		// Verify CLAUDE.md was NOT modified
-		data, err := os.ReadFile(claudeMdPath)
+		data, err := os.ReadFile(filepath.Join(tmpDir, "CLAUDE.md"))
+		if err != nil {
+			t.Fatal("CLAUDE.md not created")
+		}
+		content := string(data)
+		if !strings.Contains(content, "## Docker Container Logs") {
+			t.Fatal("CLAUDE.md missing docker-agent-tail section")
+		}
+		if !strings.Contains(content, ".claude/skills/docker-logs.md") {
+			t.Fatal("CLAUDE.md missing skill file reference")
+		}
+	})
+
+	t.Run("appends to existing CLAUDE.md", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+
+		existingContent := "# My Project\n\nSome existing content\n"
+		claudeMDPath := filepath.Join(tmpDir, "CLAUDE.md")
+		os.WriteFile(claudeMDPath, []byte(existingContent), 0644)
+
+		if err := RunInit(tmpDir); err != nil {
+			t.Fatalf("RunInit failed: %v", err)
+		}
+
+		data, err := os.ReadFile(claudeMDPath)
 		if err != nil {
 			t.Fatalf("CLAUDE.md read failed: %v", err)
 		}
-		if string(data) != existingContent {
-			t.Fatal("CLAUDE.md was modified but should not have been")
+		content := string(data)
+
+		// Original content preserved
+		if !strings.Contains(content, "# My Project") {
+			t.Fatal("existing content was lost")
+		}
+		// New section appended
+		if !strings.Contains(content, "## Docker Container Logs") {
+			t.Fatal("docker-agent-tail section not appended")
+		}
+	})
+
+	t.Run("CLAUDE.md idempotent on repeat runs", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+
+		if err := RunInit(tmpDir); err != nil {
+			t.Fatalf("first RunInit failed: %v", err)
+		}
+		firstData, _ := os.ReadFile(filepath.Join(tmpDir, "CLAUDE.md"))
+
+		if err := RunInit(tmpDir); err != nil {
+			t.Fatalf("second RunInit failed: %v", err)
+		}
+		secondData, _ := os.ReadFile(filepath.Join(tmpDir, "CLAUDE.md"))
+
+		if string(firstData) != string(secondData) {
+			t.Fatal("CLAUDE.md changed on second run — not idempotent")
 		}
 	})
 
@@ -81,9 +133,7 @@ func TestRunInit(t *testing.T) {
 		t.Parallel()
 		tmpDir := t.TempDir()
 
-		os.Mkdir(filepath.Join(tmpDir, ".claude"), 0755)
-
-		// Run twice
+		// Run twice (no .claude dir pre-created — init should create it)
 		if err := RunInit(tmpDir); err != nil {
 			t.Fatalf("first RunInit failed: %v", err)
 		}
@@ -148,7 +198,6 @@ func TestRunInit(t *testing.T) {
 		t.Parallel()
 		tmpDir := t.TempDir()
 
-		os.Mkdir(filepath.Join(tmpDir, ".claude"), 0755)
 		os.Mkdir(filepath.Join(tmpDir, ".cursor"), 0755)
 		os.Mkdir(filepath.Join(tmpDir, ".windsurf"), 0755)
 
@@ -161,7 +210,6 @@ func TestRunInit(t *testing.T) {
 			filepath.Join(tmpDir, ".claude", "skills", "docker-logs.md"),
 			filepath.Join(tmpDir, ".cursor", "rules", "docker-agent-tail.mdc"),
 			filepath.Join(tmpDir, ".windsurf", "rules", "docker-agent-tail.md"),
-			filepath.Join(tmpDir, ".mcp.json"),
 		}
 		for _, p := range paths {
 			if _, err := os.Stat(p); err != nil {
@@ -171,67 +219,93 @@ func TestRunInit(t *testing.T) {
 	})
 }
 
-func TestInitMCPJSON(t *testing.T) {
-	t.Run("creates fresh config", func(t *testing.T) {
+func TestInitClaudeMD(t *testing.T) {
+	t.Run("creates new file", func(t *testing.T) {
 		t.Parallel()
 		tmpDir := t.TempDir()
 
-		err := initMCPJSON(tmpDir)
+		err := initClaudeMD(tmpDir)
 		if err != nil {
-			t.Fatalf("initMCPJSON failed: %v", err)
+			t.Fatalf("initClaudeMD failed: %v", err)
 		}
 
-		mcpPath := filepath.Join(tmpDir, ".mcp.json")
-		data, _ := os.ReadFile(mcpPath)
-
-		var config MCPConfig
-		if err := json.Unmarshal(data, &config); err != nil {
-			t.Fatalf("invalid JSON: %v", err)
+		data, err := os.ReadFile(filepath.Join(tmpDir, "CLAUDE.md"))
+		if err != nil {
+			t.Fatal("CLAUDE.md not created")
 		}
-		if config.Tools["docker-agent-tail"] == nil {
-			t.Fatal("docker-agent-tail not in tools")
+		content := string(data)
+		if !strings.Contains(content, claudeMDMarker) {
+			t.Fatal("missing marker")
+		}
+		if !strings.Contains(content, "Never use `docker logs` directly") {
+			t.Fatal("missing key instruction")
+		}
+		if !strings.Contains(content, ".claude/skills/docker-logs.md") {
+			t.Fatal("missing skill file reference")
 		}
 	})
 
-	t.Run("preserves existing tools", func(t *testing.T) {
+	t.Run("appends to existing file", func(t *testing.T) {
 		t.Parallel()
 		tmpDir := t.TempDir()
-		mcpPath := filepath.Join(tmpDir, ".mcp.json")
 
-		existing := MCPConfig{
-			Tools: map[string]interface{}{
-				"other-tool": map[string]interface{}{
-					"enabled": true,
-				},
-			},
-		}
-		data, _ := json.Marshal(existing)
-		os.WriteFile(mcpPath, data, 0644)
+		existing := "# Project\n\nExisting rules.\n"
+		os.WriteFile(filepath.Join(tmpDir, "CLAUDE.md"), []byte(existing), 0644)
 
-		if err := initMCPJSON(tmpDir); err != nil {
-			t.Fatalf("initMCPJSON failed: %v", err)
+		if err := initClaudeMD(tmpDir); err != nil {
+			t.Fatalf("initClaudeMD failed: %v", err)
 		}
 
-		newData, _ := os.ReadFile(mcpPath)
-		var config MCPConfig
-		json.Unmarshal(newData, &config)
-
-		if config.Tools["other-tool"] == nil {
-			t.Fatal("existing tool lost")
+		data, _ := os.ReadFile(filepath.Join(tmpDir, "CLAUDE.md"))
+		content := string(data)
+		if !strings.HasPrefix(content, "# Project") {
+			t.Fatal("existing content not preserved")
 		}
-		if config.Tools["docker-agent-tail"] == nil {
-			t.Fatal("docker-agent-tail not added")
+		if !strings.Contains(content, claudeMDMarker) {
+			t.Fatal("section not appended")
+		}
+	})
+
+	t.Run("idempotent", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+
+		initClaudeMD(tmpDir)
+		first, _ := os.ReadFile(filepath.Join(tmpDir, "CLAUDE.md"))
+
+		initClaudeMD(tmpDir)
+		second, _ := os.ReadFile(filepath.Join(tmpDir, "CLAUDE.md"))
+
+		if string(first) != string(second) {
+			t.Fatal("content changed on second call")
+		}
+	})
+
+	t.Run("skips when marker already present", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+
+		// Simulate a user who already has a custom docker section
+		custom := "# My App\n\n## Docker Container Logs\n\nMy custom docker notes.\n"
+		os.WriteFile(filepath.Join(tmpDir, "CLAUDE.md"), []byte(custom), 0644)
+
+		if err := initClaudeMD(tmpDir); err != nil {
+			t.Fatalf("initClaudeMD failed: %v", err)
+		}
+
+		data, _ := os.ReadFile(filepath.Join(tmpDir, "CLAUDE.md"))
+		if string(data) != custom {
+			t.Fatal("modified file that already had marker")
 		}
 	})
 }
 
 func TestInitClaudeSkill(t *testing.T) {
-	t.Run("creates skills directory and file", func(t *testing.T) {
+	t.Run("creates skills directory and file from scratch", func(t *testing.T) {
 		t.Parallel()
 		tmpDir := t.TempDir()
 
-		os.Mkdir(filepath.Join(tmpDir, ".claude"), 0755)
-
+		// No .claude dir pre-created — initClaudeSkill should create it
 		err := initClaudeSkill(tmpDir)
 		if err != nil {
 			t.Fatalf("initClaudeSkill failed: %v", err)
@@ -297,4 +371,13 @@ func TestInitWindsurfRules(t *testing.T) {
 			t.Fatal("rule file missing content")
 		}
 	})
+}
+
+func TestAgentHelp(t *testing.T) {
+	t.Parallel()
+
+	help := AgentHelp()
+	if !strings.Contains(help, "llms-full.txt") {
+		t.Fatal("AgentHelp missing llms-full.txt link")
+	}
 }
