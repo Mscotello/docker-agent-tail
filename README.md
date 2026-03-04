@@ -150,20 +150,23 @@ docker-agent-tail init
 ## Usage reference
 
 ```
-docker-agent-tail [flags] [pattern...]
+docker-agent-tail [FLAGS] [PATTERN...]
+
+PATTERN  glob pattern to match container names (supports *, ?, [abc])
 
 Commands:
-  init          Set up AI agent config files (CLAUDE.md, .mcp.json, skills)
+  init          Set up AI agent config files (skills, CLAUDE.md)
   agent-help    Print usage guide for AI coding agents
-  clean         Remove old log sessions (--retain N, default 5)
-  lnav          Open latest session in lnav
+  clean         Remove old log sessions (--retain N, --dry-run)
+  lnav          Open latest session in lnav (--session NAME)
   lnav-install  Install lnav format for viewing logs with lnav
 
 Flags:
   -a, --all                   Tail all running containers
   -n, --names strings         Explicit container names (comma-separated)
   -c, --compose               Auto-discover from compose project
-  -f, --follow                Reattach on restart (default: true)
+  -f, --follow                Reattach on container restart (default: false)
+      --json                  Output logs as JSON Lines to stdout
   -e, --exclude strings       Regex patterns to exclude log lines
   -m, --mute strings          Hide matching regex from terminal (still written to log files)
   -o, --output string         Output directory (default: "./logs")
@@ -219,7 +222,60 @@ Level normalization maps common formats to canonical values:
 docker-agent-tail clean              # keep 5 most recent sessions (default)
 docker-agent-tail clean --retain 10  # keep 10 most recent
 docker-agent-tail clean --retain 0   # delete all sessions
+docker-agent-tail clean --dry-run    # list what would be deleted
 ```
+
+## Pattern matching
+
+Container name patterns use glob syntax:
+
+| Pattern | Matches |
+|---------|---------|
+| `api-*` | `api-server`, `api-gateway`, `api-worker` |
+| `*-db` | `postgres-db`, `mysql-db` |
+| `web-[12]` | `web-1`, `web-2` |
+| `???` | Any 3-character container name |
+
+```bash
+docker-agent-tail 'api-*'                  # all api containers
+docker-agent-tail 'web-*' 'api-*'          # multiple patterns
+```
+
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | No containers found matching criteria |
+| 3 | Docker daemon error (connection failed, timeout) |
+| 64 | Usage error (invalid flags or arguments) |
+
+## Docker requirements
+
+- Docker daemon running and accessible via socket
+- Docker log driver must be `json-file` or `journald` — other drivers (e.g., `syslog`, `awslogs`) don't support `ContainerLogs` streaming
+- Minimum Docker API: auto-negotiated (no minimum version)
+- Socket discovery order: `$DOCKER_HOST` → `~/.docker/run/docker.sock` → `/var/run/docker.sock`
+
+## Troubleshooting
+
+**No logs appearing?** Check the container's log driver: `docker inspect --format='{{.HostConfig.LogConfig.Type}}' <container>`. Must be `json-file` or `journald`.
+
+**Truncated log lines?** Lines longer than 1MB are truncated by the scanner buffer. This covers virtually all log payloads.
+
+**Permission denied?** Add your user to the docker group (`sudo usermod -aG docker $USER`) or check Docker socket permissions.
+
+**Docker socket not found?** Set `DOCKER_HOST` to your Docker socket path, or ensure Docker Desktop is running.
+
+**Timed out connecting?** The tool waits 30 seconds for the Docker daemon. Check if Docker is running: `docker info`.
+
+## Known limitations
+
+- TTY-attached containers send raw streams (no stdout/stderr demux)
+- Maximum line size: 1MB (larger lines are truncated)
+- Only file-based log drivers (`json-file`, `journald`) are supported
+- Container names from Docker API include leading `/` — automatically trimmed
 
 ## Documentation
 
@@ -233,12 +289,6 @@ make test               # run tests with race detector
 make lint               # run golangci-lint
 make release-snapshot   # test goreleaser (no publish)
 ```
-
-## Requirements
-
-- Docker daemon running and accessible
-- Docker log driver must be `json-file` or `journald`
-- Go 1.25+ (for building from source)
 
 ## License
 
