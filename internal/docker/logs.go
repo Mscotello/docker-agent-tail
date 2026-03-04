@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -61,12 +62,11 @@ func StreamLogs(ctx context.Context, c DockerClient, containerID string, opts St
 		}
 		defer logs.Close()
 
-		// Demux if not TTY, otherwise read raw
-		var reader io.Reader
 		if resp.Config.Tty {
-			reader = logs
+			// TTY containers send raw stream — read as stdout
+			readStream(ctx, logs, logCh, errCh, opts.ContainerName, "stdout")
 		} else {
-			// stdcopy demultiplexes stdout/stderr
+			// Demux stdout/stderr via stdcopy
 			outReader, outWriter := io.Pipe()
 			errReader, errWriter := io.Pipe()
 
@@ -78,33 +78,49 @@ func StreamLogs(ctx context.Context, c DockerClient, containerID string, opts St
 				errWriter.Close()
 			}()
 
-			// Combine both streams for processing
-			// For now, process stdout only - stderr will be handled separately
-			reader = outReader
-			_ = errReader // TODO: handle stderr stream separately if needed
-		}
-
-		scanner := bufio.NewScanner(reader)
-		for scanner.Scan() {
-			line := scanner.Text()
-			logLine, err := parseLogLine(line, opts.ContainerName)
-			if err != nil {
-				continue
-			}
-			logCh <- logLine
-		}
-
-		if err := scanner.Err(); err != nil {
-			errCh <- fmt.Errorf("reading logs: %w", err)
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				readStream(ctx, outReader, logCh, errCh, opts.ContainerName, "stdout")
+			}()
+			go func() {
+				defer wg.Done()
+				readStream(ctx, errReader, logCh, errCh, opts.ContainerName, "stderr")
+			}()
+			wg.Wait()
 		}
 	}()
 
 	return logCh, errCh
 }
 
+// readStream scans lines from a reader and sends parsed LogLines to logCh.
+func readStream(ctx context.Context, reader io.Reader, logCh chan<- LogLine, errCh chan<- error, containerName, stream string) {
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		line := scanner.Text()
+		logLine, err := parseLogLine(line, containerName, stream)
+		if err != nil {
+			continue
+		}
+		select {
+		case logCh <- logLine:
+		case <-ctx.Done():
+			return
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		select {
+		case errCh <- fmt.Errorf("reading %s logs: %w", stream, err):
+		default:
+		}
+	}
+}
+
 // parseLogLine parses a Docker log line with timestamp.
 // Format: "2006-01-02T15:04:05.999999999Z content"
-func parseLogLine(line, containerName string) (LogLine, error) {
+func parseLogLine(line, containerName, stream string) (LogLine, error) {
 	parts := strings.SplitN(line, " ", 2)
 	if len(parts) < 1 {
 		return LogLine{}, fmt.Errorf("invalid log line")
@@ -122,7 +138,7 @@ func parseLogLine(line, containerName string) (LogLine, error) {
 
 	return LogLine{
 		Timestamp:     ts,
-		Stream:        "stdout",
+		Stream:        stream,
 		Content:       content,
 		ContainerName: containerName,
 	}, nil

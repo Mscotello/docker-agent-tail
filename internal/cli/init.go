@@ -11,8 +11,8 @@ const (
 	contextContent = `## Docker Container Logs
 
 This project uses ` + "`docker-agent-tail`" + ` to tail Docker container logs to disk.
-Logs are written to ` + "`logs/latest/`" + `. Run ` + "`docker-agent-tail --help`" + ` for usage.
-When debugging container issues, read ` + "`logs/latest/combined.log`" + `.`
+Logs are written to ` + "`logs/latest/`" + ` as JSON Lines. Run ` + "`docker-agent-tail --help`" + ` for usage.
+When debugging container issues, read ` + "`logs/latest/combined.jsonl`" + `.`
 
 	skillContent = `# docker-logs
 
@@ -20,21 +20,22 @@ Skill for working with Docker container logs tailed by docker-agent-tail.
 
 ## Log locations
 
-- Combined log: ` + "`logs/latest/combined.log`" + `
-- Per-container: ` + "`logs/latest/<container-name>.log`" + `
+- Combined log: ` + "`logs/latest/combined.jsonl`" + `
+- Per-container: ` + "`logs/latest/<container-name>.jsonl`" + `
 - Metadata: ` + "`logs/latest/metadata.json`" + `
 
-## Log format
+## Log format (JSON Lines)
 
-` + "```" + `
-[2026-03-04T10:30:01.789Z] [api    ] [stdout] GET /api/users 200 12ms
-[2026-03-04T10:30:01.800Z] [api    ] [stderr] WARN: connection pool exhausted
-[2026-03-04T10:30:02.100Z] [worker ] [stdout] Job completed: send-email-123
+Each line is a JSON object. Plain text messages are wrapped in an envelope:
+` + "```json" + `
+{"ts":"2026-03-04T10:30:01.789Z","container":"api","stream":"stdout","message":"GET /api/users 200 12ms"}
+{"ts":"2026-03-04T10:30:01.800Z","container":"api","stream":"stderr","message":"WARN: connection pool exhausted"}
 ` + "```" + `
 
-- ISO 8601 timestamps with millisecond precision
-- Fixed-width container name column
-- Stream type: [stdout] or [stderr]
+Structured JSON from containers is merged with metadata:
+` + "```json" + `
+{"ts":"2026-03-04T10:30:02.100Z","container":"worker","stream":"stdout","level":"info","msg":"Job completed","job_id":"send-email-123"}
+` + "```" + `
 
 ## Common commands
 
@@ -45,8 +46,8 @@ Skill for working with Docker container logs tailed by docker-agent-tail.
 
 ## Debugging workflow
 
-1. Read ` + "`logs/latest/combined.log`" + ` for overview
-2. Grep for ` + "`[stderr]`" + ` to find errors
+1. Read ` + "`logs/latest/combined.jsonl`" + ` for overview
+2. Grep for ` + "`\"stream\":\"stderr\"`" + ` to find errors
 3. Check per-container logs for detailed output
 4. Review ` + "`logs/latest/metadata.json`" + ` for container info
 `
@@ -62,26 +63,28 @@ Start tailing logs in the background:
 
   docker-agent-tail --all --output logs/ &
 
-Logs are now being written to disk. Read them anytime:
+Logs are now being written to disk as JSON Lines. Read them anytime:
 
-  logs/latest/combined.log      — all containers, interleaved
-  logs/latest/<name>.log        — per-container logs
+  logs/latest/combined.jsonl    — all containers, interleaved
+  logs/latest/<name>.jsonl      — per-container logs
   logs/latest/metadata.json     — session info (containers, start time)
 
-## Log format
+## Log format (JSON Lines)
 
-  [2026-03-04T10:30:01.789Z] [api    ] [stdout] GET /api/users 200 12ms
-  [2026-03-04T10:30:01.800Z] [api    ] [stderr] WARN: connection pool exhausted
-  [2026-03-04T10:30:02.100Z] [worker ] [stdout] Job completed: send-email-123
+Plain text container output is wrapped in a JSON envelope:
 
-Fields: ISO 8601 timestamp, container name (fixed-width), stream type, message.
+  {"ts":"2026-03-04T10:30:01.789Z","container":"api","stream":"stdout","message":"GET /api/users 200 12ms"}
+  {"ts":"2026-03-04T10:30:01.800Z","container":"api","stream":"stderr","message":"WARN: connection pool exhausted"}
+
+Structured JSON from containers is merged with metadata:
+
+  {"ts":"2026-03-04T10:30:02.100Z","container":"worker","stream":"stdout","level":"info","msg":"Job completed","job_id":"send-email-123"}
 
 ## Useful commands
 
   docker-agent-tail --all                    # tail all containers
   docker-agent-tail --names api,web          # tail specific containers
   docker-agent-tail --all --exclude 'health' # filter out noise
-  docker-agent-tail --all --json             # JSON lines output
   docker-agent-tail --all --since 5m         # last 5 minutes only
 
 ## Background usage
@@ -97,8 +100,8 @@ Fields: ISO 8601 timestamp, container name (fixed-width), stream type, message.
 
 ## Debugging workflow
 
-  1. Read logs/latest/combined.log for an overview
-  2. Grep for [stderr] to find errors
+  1. Read logs/latest/combined.jsonl for an overview
+  2. Grep for "stream":"stderr" to find errors
   3. Check per-container logs for detailed context
   4. Review logs/latest/metadata.json for container info
 

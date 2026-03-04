@@ -44,7 +44,7 @@ func TestRunInit(t *testing.T) {
 		if !strings.Contains(content, "# docker-logs") {
 			t.Fatal("skill file missing title")
 		}
-		if !strings.Contains(content, "logs/latest/combined.log") {
+		if !strings.Contains(content, "logs/latest/combined.jsonl") {
 			t.Fatal("skill file missing log path")
 		}
 		if !strings.Contains(content, "Debugging workflow") {

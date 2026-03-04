@@ -58,19 +58,21 @@ cd docs && npm run dev
 
 ## Log Output Format
 
-Per-container (`<name>.log`):
-```
-[2026-03-04T10:30:01.789Z] [stdout] GET /api/users 200 12ms
+Log files on disk use JSON Lines (`.jsonl`). Terminal output remains human-readable.
+
+Plain text container output (`<name>.jsonl` / `combined.jsonl`):
+```json
+{"ts":"2026-03-04T10:30:01.789Z","container":"api","stream":"stdout","message":"GET /api/users 200 12ms"}
 ```
 
-Combined (`combined.log`):
-```
-[2026-03-04T10:30:01.789Z] [api    ] [stdout] GET /api/users 200 12ms
+Structured JSON from containers is merged with metadata:
+```json
+{"ts":"2026-03-04T10:30:01.789Z","container":"api","stream":"stdout","level":"info","msg":"GET /api/users","status":200}
 ```
 
-- ISO 8601 timestamps, millisecond precision
-- Fixed-width container name column in combined log
-- Stream type `[stdout]`/`[stderr]` always present
+- ISO 8601 timestamps (RFC3339Nano)
+- Auto-detection: JSON objects get metadata merged; plain text is wrapped in envelope
+- Stream type `stdout`/`stderr` always present
 
 ## Testing
 

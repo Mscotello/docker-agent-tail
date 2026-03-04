@@ -14,7 +14,6 @@ import (
 // LogWriter writes logs to per-container files and a combined log file.
 type LogWriter struct {
 	sessionDir     string
-	maxNameLen     int
 	combinedFile   *os.File
 	containerFiles map[string]*os.File
 	flushTicker    *time.Ticker
@@ -30,10 +29,8 @@ type logEntry struct {
 }
 
 // NewLogWriter creates a new log writer for a session.
-// maxNameLen is the longest container name for fixed-width formatting.
-func NewLogWriter(sessionDir string, maxNameLen int) (*LogWriter, error) {
-	// Create combined.log
-	combinedPath := filepath.Join(sessionDir, "combined.log")
+func NewLogWriter(sessionDir string) (*LogWriter, error) {
+	combinedPath := filepath.Join(sessionDir, "combined.jsonl")
 	combinedFile, err := os.Create(combinedPath)
 	if err != nil {
 		return nil, fmt.Errorf("creating combined log: %w", err)
@@ -41,7 +38,6 @@ func NewLogWriter(sessionDir string, maxNameLen int) (*LogWriter, error) {
 
 	w := &LogWriter{
 		sessionDir:     sessionDir,
-		maxNameLen:     maxNameLen,
 		combinedFile:   combinedFile,
 		containerFiles: make(map[string]*os.File),
 		flushTicker:    time.NewTicker(100 * time.Millisecond),
@@ -83,23 +79,21 @@ func (w *LogWriter) flusher() {
 	}
 }
 
-// writeLine writes to per-container file and combined log.
+// writeLine writes to per-container file and combined log in JSONL format.
 func (w *LogWriter) writeLine(line docker.LogLine) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	// Per-container format
-	perContainerLine := formatLogLine(line, false)
+	jsonl := FormatJSONL(line)
 
 	// Write to per-container file
 	containerFile, err := w.getOrCreateFile(line.ContainerName)
 	if err == nil {
-		_, _ = containerFile.WriteString(perContainerLine)
+		_, _ = containerFile.Write(jsonl)
 	}
 
-	// Combined format with fixed-width container name
-	combinedLine := formatCombinedLine(line, w.maxNameLen)
-	_, _ = w.combinedFile.WriteString(combinedLine)
+	// Write to combined file
+	_, _ = w.combinedFile.Write(jsonl)
 }
 
 // getOrCreateFile returns the file handle for a container, creating if needed.
@@ -108,7 +102,7 @@ func (w *LogWriter) getOrCreateFile(containerName string) (*os.File, error) {
 		return f, nil
 	}
 
-	path := filepath.Join(w.sessionDir, containerName+".log")
+	path := filepath.Join(w.sessionDir, containerName+".jsonl")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("opening container log: %w", err)
@@ -149,18 +143,3 @@ func (w *LogWriter) Close() error {
 	return nil
 }
 
-// formatLogLine formats a log line for per-container output.
-func formatLogLine(line docker.LogLine, combined bool) string {
-	ts := line.Timestamp.Format("2006-01-02T15:04:05.999Z07:00")
-	return fmt.Sprintf("[%s] [%s] %s\n", ts, line.Stream, line.Content)
-}
-
-// formatCombinedLine formats a log line for combined output with fixed-width container name.
-func formatCombinedLine(line docker.LogLine, maxNameLen int) string {
-	ts := line.Timestamp.Format("2006-01-02T15:04:05.999Z07:00")
-	containerName := line.ContainerName
-	if len(containerName) < maxNameLen {
-		containerName = containerName + " " + string(make([]byte, maxNameLen-len(line.ContainerName)))
-	}
-	return fmt.Sprintf("[%s] [%-*s] [%s] %s\n", ts, maxNameLen, line.ContainerName, line.Stream, line.Content)
-}

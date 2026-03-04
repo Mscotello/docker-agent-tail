@@ -167,14 +167,7 @@ func main() {
 	}
 
 	// Create log writer
-	maxNameLen := 0
-	for _, c := range containers {
-		if len(c.Name) > maxNameLen {
-			maxNameLen = len(c.Name)
-		}
-	}
-
-	writer, err := session.NewLogWriter(sess.Dir, maxNameLen)
+	writer, err := session.NewLogWriter(sess.Dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: creating log writer: %v\n", err)
 		os.Exit(1)

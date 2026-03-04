@@ -75,21 +75,22 @@ Flags:
 
 ## Log Output Format
 
-Per-container logs (`<container_name>.log`):
-```
-[2026-03-04T10:30:01.789Z] [stdout] GET /api/users 200 12ms
-[2026-03-04T10:30:02.456Z] [stderr] Connection error: timeout
+Log files on disk use JSON Lines (`.jsonl`). Terminal output remains human-readable.
+
+Plain text container output (`<name>.jsonl` / `combined.jsonl`):
+```json
+{"ts":"2026-03-04T10:30:01.789Z","container":"api","stream":"stdout","message":"GET /api/users 200 12ms"}
+{"ts":"2026-03-04T10:30:02.456Z","container":"web","stream":"stderr","message":"Connection error: timeout"}
 ```
 
-Combined logs (`combined.log`):
-```
-[2026-03-04T10:30:01.789Z] [api    ] [stdout] GET /api/users 200 12ms
-[2026-03-04T10:30:02.456Z] [web    ] [stderr] Connection error: timeout
+Structured JSON from containers is merged with metadata:
+```json
+{"ts":"2026-03-04T10:30:01.789Z","container":"api","stream":"stdout","level":"info","msg":"request completed","status":200}
 ```
 
-- ISO 8601 timestamps with millisecond precision
-- Fixed-width container name column for easy alignment
-- Stream type (`[stdout]`/`[stderr]`) always included
+- ISO 8601 timestamps (RFC3339Nano)
+- Auto-detection: JSON objects get metadata merged; plain text is wrapped in envelope
+- Stream type (`stdout`/`stderr`) always present
 
 ## Documentation
 

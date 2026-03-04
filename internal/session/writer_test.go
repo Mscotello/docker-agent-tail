@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,16 +12,12 @@ import (
 )
 
 func TestLogWriter(t *testing.T) {
-	tmpDir := t.TempDir()
-
 	tests := []struct {
-		name       string
-		maxNameLen int
-		lines      []docker.LogLine
+		name  string
+		lines []docker.LogLine
 	}{
 		{
-			name:       "single container",
-			maxNameLen: 5,
+			name: "single container",
 			lines: []docker.LogLine{
 				{
 					Timestamp:     time.Now(),
@@ -31,8 +28,7 @@ func TestLogWriter(t *testing.T) {
 			},
 		},
 		{
-			name:       "multiple containers",
-			maxNameLen: 6,
+			name: "multiple containers",
 			lines: []docker.LogLine{
 				{
 					Timestamp:     time.Now(),
@@ -42,7 +38,7 @@ func TestLogWriter(t *testing.T) {
 				},
 				{
 					Timestamp:     time.Now(),
-					Stream:        "stdout",
+					Stream:        "stderr",
 					Content:       "DB ready",
 					ContainerName: "database",
 				},
@@ -53,7 +49,9 @@ func TestLogWriter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			writer, err := NewLogWriter(tmpDir, tt.maxNameLen)
+			tmpDir := t.TempDir()
+
+			writer, err := NewLogWriter(tmpDir)
 			if err != nil {
 				t.Fatalf("NewLogWriter() error = %v", err)
 			}
@@ -66,70 +64,52 @@ func TestLogWriter(t *testing.T) {
 				t.Fatalf("Close() error = %v", err)
 			}
 
-			// Check combined.log exists
-			combinedPath := filepath.Join(tmpDir, "combined.log")
-			if _, err := os.Stat(combinedPath); os.IsNotExist(err) {
-				t.Errorf("combined.log not created")
+			// Check combined.jsonl exists and is valid JSONL
+			combinedPath := filepath.Join(tmpDir, "combined.jsonl")
+			combinedData, err := os.ReadFile(combinedPath)
+			if err != nil {
+				t.Fatalf("combined.jsonl not created: %v", err)
 			}
 
-			// Check per-container files exist
+			combinedLines := strings.Split(strings.TrimSpace(string(combinedData)), "\n")
+			if len(combinedLines) != len(tt.lines) {
+				t.Errorf("combined.jsonl has %d lines, want %d", len(combinedLines), len(tt.lines))
+			}
+
+			for i, cl := range combinedLines {
+				var obj map[string]any
+				if err := json.Unmarshal([]byte(cl), &obj); err != nil {
+					t.Errorf("combined.jsonl line %d is not valid JSON: %v", i, err)
+					continue
+				}
+				for _, key := range []string{"ts", "container", "stream"} {
+					if _, ok := obj[key]; !ok {
+						t.Errorf("combined.jsonl line %d missing key %q", i, key)
+					}
+				}
+			}
+
+			// Check per-container files exist and are valid JSONL
 			for _, line := range tt.lines {
-				containerLogPath := filepath.Join(tmpDir, line.ContainerName+".log")
-				if _, err := os.Stat(containerLogPath); os.IsNotExist(err) {
-					t.Errorf("container log %s not created", line.ContainerName+".log")
-				}
-
-				// Check content
-				content, err := os.ReadFile(containerLogPath)
+				containerLogPath := filepath.Join(tmpDir, line.ContainerName+".jsonl")
+				data, err := os.ReadFile(containerLogPath)
 				if err != nil {
-					t.Fatalf("reading container log: %v", err)
+					t.Fatalf("container log %s.jsonl not created: %v", line.ContainerName, err)
 				}
 
-				if !strings.Contains(string(content), line.Content) {
-					t.Errorf("container log missing content: %q", line.Content)
+				var obj map[string]any
+				if err := json.Unmarshal([]byte(strings.TrimSpace(string(data))), &obj); err != nil {
+					t.Errorf("container log %s.jsonl is not valid JSON: %v", line.ContainerName, err)
+					continue
+				}
+
+				if obj["container"] != line.ContainerName {
+					t.Errorf("container = %v, want %q", obj["container"], line.ContainerName)
+				}
+				if obj["stream"] != line.Stream {
+					t.Errorf("stream = %v, want %q", obj["stream"], line.Stream)
 				}
 			}
 		})
-	}
-}
-
-func TestFormatLogLine(t *testing.T) {
-	now := time.Now()
-	line := docker.LogLine{
-		Timestamp:     now,
-		Stream:        "stdout",
-		Content:       "test message",
-		ContainerName: "app",
-	}
-
-	formatted := formatLogLine(line, false)
-
-	if !strings.Contains(formatted, "stdout") {
-		t.Errorf("formatted line missing stream type")
-	}
-	if !strings.Contains(formatted, "test message") {
-		t.Errorf("formatted line missing content")
-	}
-}
-
-func TestFormatCombinedLine(t *testing.T) {
-	now := time.Now()
-	line := docker.LogLine{
-		Timestamp:     now,
-		Stream:        "stdout",
-		Content:       "test message",
-		ContainerName: "app",
-	}
-
-	formatted := formatCombinedLine(line, 10)
-
-	if !strings.Contains(formatted, "app") {
-		t.Errorf("combined line missing container name")
-	}
-	if !strings.Contains(formatted, "stdout") {
-		t.Errorf("combined line missing stream type")
-	}
-	if !strings.Contains(formatted, "test message") {
-		t.Errorf("combined line missing content")
 	}
 }
