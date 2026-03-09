@@ -94,7 +94,7 @@ Creates:
 `)
 				os.Exit(0)
 			}
-			if err := cli.RunInit(*output); err != nil {
+			if err := cli.RunInit(""); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
