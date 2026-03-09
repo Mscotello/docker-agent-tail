@@ -14,7 +14,7 @@ const (
 
 **Never use ` + "`docker logs`" + ` directly.** Use ` + "`docker-agent-tail`" + ` to capture structured JSONL logs.
 Logs are at ` + "`logs/latest/combined.jsonl`" + `. Query with ` + "`lnav`" + ` or read directly.
-Run ` + "`docker-agent-tail --help`" + ` for flags. See ` + "`.claude/skills/docker-logs.md`" + ` for full usage.
+Run ` + "`docker-agent-tail --help`" + ` for flags. See ` + "`.claude/skills/docker-logs/SKILL.md`" + ` for full usage.
 `
 
 	contextContent = `## Docker Container Logs
@@ -23,7 +23,12 @@ This project uses ` + "`docker-agent-tail`" + ` to tail Docker container logs to
 Logs are written to ` + "`logs/latest/`" + ` as JSON Lines. Run ` + "`docker-agent-tail --help`" + ` for usage.
 When debugging container issues, read ` + "`logs/latest/combined.jsonl`" + `.`
 
-	skillContent = `# docker-logs
+	skillContent = `---
+name: docker-logs
+description: Query and analyze Docker container logs tailed by docker-agent-tail. Use when debugging container issues or reading logs.
+---
+
+# docker-logs
 
 Skill for working with Docker container logs tailed by docker-agent-tail.
 
@@ -207,11 +212,11 @@ func RunInit(outputDir string) error {
 	cursorExists := dirExists(cursorDir)
 	windsurfExists := dirExists(windsurfDir)
 
-	// Always create .claude/skills/docker-logs.md (primary discovery mechanism)
+	// Always create .claude/skills/docker-logs/SKILL.md (primary discovery mechanism)
 	if err := initClaudeSkill(cwd); err != nil {
 		return fmt.Errorf("initializing claude skill: %w", err)
 	}
-	fmt.Printf("Initialized .claude/skills/docker-logs.md\n")
+	fmt.Printf("Initialized .claude/skills/docker-logs/SKILL.md\n")
 
 	// Always update CLAUDE.md (lean pointer to skill)
 	if err := initClaudeMD(cwd); err != nil {
@@ -284,14 +289,14 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// initClaudeSkill creates .claude/skills/docker-logs.md with skill content
+// initClaudeSkill creates .claude/skills/docker-logs/SKILL.md with skill content
 func initClaudeSkill(cwd string) error {
-	skillsDir := filepath.Join(cwd, ".claude", "skills")
-	if err := os.MkdirAll(skillsDir, 0755); err != nil {
-		return fmt.Errorf("creating .claude/skills directory: %w", err)
+	skillDir := filepath.Join(cwd, ".claude", "skills", "docker-logs")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		return fmt.Errorf("creating .claude/skills/docker-logs directory: %w", err)
 	}
 
-	skillFile := filepath.Join(skillsDir, "docker-logs.md")
+	skillFile := filepath.Join(skillDir, "SKILL.md")
 	return os.WriteFile(skillFile, []byte(skillContent), 0644)
 }
 

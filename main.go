@@ -87,7 +87,7 @@ func main() {
 Set up AI agent config files in the current project.
 
 Creates:
-  .claude/skills/docker-logs.md    Claude Code skill file
+  .claude/skills/docker-logs/SKILL.md   Claude Code skill file
   CLAUDE.md                        Claude Code instructions (appends if exists)
   .cursor/rules/ (if .cursor/ exists)
   .windsurf/rules/ (if .windsurf/ exists)

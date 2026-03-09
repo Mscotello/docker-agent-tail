@@ -18,7 +18,7 @@ func TestRunInit(t *testing.T) {
 		}
 
 		// Skill file should always be created
-		skillPath := filepath.Join(tmpDir, ".claude", "skills", "docker-logs.md")
+		skillPath := filepath.Join(tmpDir, ".claude", "skills", "docker-logs", "SKILL.md")
 		if _, err := os.Stat(skillPath); err != nil {
 			t.Fatal("skill file not created")
 		}
@@ -43,7 +43,7 @@ func TestRunInit(t *testing.T) {
 			t.Fatalf("RunInit failed: %v", err)
 		}
 
-		skillPath := filepath.Join(tmpDir, ".claude", "skills", "docker-logs.md")
+		skillPath := filepath.Join(tmpDir, ".claude", "skills", "docker-logs", "SKILL.md")
 		data, err := os.ReadFile(skillPath)
 		if err != nil {
 			t.Fatalf("skill file not created: %v", err)
@@ -77,7 +77,7 @@ func TestRunInit(t *testing.T) {
 		if !strings.Contains(content, "## Docker Container Logs") {
 			t.Fatal("CLAUDE.md missing docker-agent-tail section")
 		}
-		if !strings.Contains(content, ".claude/skills/docker-logs.md") {
+		if !strings.Contains(content, ".claude/skills/docker-logs/SKILL.md") {
 			t.Fatal("CLAUDE.md missing skill file reference")
 		}
 	})
@@ -142,7 +142,7 @@ func TestRunInit(t *testing.T) {
 		}
 
 		// Verify skill file exists and has correct content
-		skillPath := filepath.Join(tmpDir, ".claude", "skills", "docker-logs.md")
+		skillPath := filepath.Join(tmpDir, ".claude", "skills", "docker-logs", "SKILL.md")
 		data, err := os.ReadFile(skillPath)
 		if err != nil {
 			t.Fatalf("skill file not found: %v", err)
@@ -207,7 +207,7 @@ func TestRunInit(t *testing.T) {
 
 		// Verify all files created
 		paths := []string{
-			filepath.Join(tmpDir, ".claude", "skills", "docker-logs.md"),
+			filepath.Join(tmpDir, ".claude", "skills", "docker-logs", "SKILL.md"),
 			filepath.Join(tmpDir, ".cursor", "rules", "docker-agent-tail.mdc"),
 			filepath.Join(tmpDir, ".windsurf", "rules", "docker-agent-tail.md"),
 		}
@@ -240,7 +240,7 @@ func TestInitClaudeMD(t *testing.T) {
 		if !strings.Contains(content, "Never use `docker logs` directly") {
 			t.Fatal("missing key instruction")
 		}
-		if !strings.Contains(content, ".claude/skills/docker-logs.md") {
+		if !strings.Contains(content, ".claude/skills/docker-logs/SKILL.md") {
 			t.Fatal("missing skill file reference")
 		}
 	})
@@ -311,7 +311,7 @@ func TestInitClaudeSkill(t *testing.T) {
 			t.Fatalf("initClaudeSkill failed: %v", err)
 		}
 
-		skillFile := filepath.Join(tmpDir, ".claude", "skills", "docker-logs.md")
+		skillFile := filepath.Join(tmpDir, ".claude", "skills", "docker-logs", "SKILL.md")
 		data, err := os.ReadFile(skillFile)
 		if err != nil {
 			t.Fatalf("skill file not created: %v", err)
